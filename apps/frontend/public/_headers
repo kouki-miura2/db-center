@@ -1,0 +1,11 @@
+# Response headers for static assets served by Cloudflare (Workers static assets / Pages).
+# Other hosts ignore this file — set the same headers in their config instead.
+# The API is same-origin (`/api`), so `default-src 'self'` already allows it. Add each external
+# origin the app needs (sign-in, third-party APIs, images) to the matching CSP directive
+# (e.g. `connect-src 'self' https://...`).
+/*
+  Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
