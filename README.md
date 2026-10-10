@@ -2,22 +2,6 @@
 
 A tool that centralizes database design to improve development efficiency.
 
-6. Install dependencies and confirm everything works:
-
-```bash
-vp install
-vp run ready
-```
-
-7. Commit the result and push to the new remote:
-
-```bash
-git add -A
-git commit -m "chore: initial commit from fullstack-typescript template"
-git branch -M main
-git push -u origin main
-```
-
 ## Development
 
 The frontend is served at `/` and the API at `/api` on the same origin, in development and in
