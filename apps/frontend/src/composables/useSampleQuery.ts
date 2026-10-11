@@ -1,17 +1,18 @@
 import type { QueryClient } from '@tanstack/vue-query'
 import { useQuery } from '@tanstack/vue-query'
-import type { MaybeRefOrGetter } from 'vue'
-import { toValue } from 'vue'
 
 import { apiClient } from '../api/client.ts'
 
-/** `queryClient` is only needed in tests, to run the query outside of a mounted app. */
-export const useSampleQuery = (id: MaybeRefOrGetter<string>, queryClient?: QueryClient) =>
+/**
+ * Reference query: the signed-in user (`GET /api/auth/me`). `queryClient` is only needed in
+ * tests, to run the query outside of a mounted app.
+ */
+export const useSampleQuery = (queryClient?: QueryClient) =>
   useQuery(
     {
-      queryKey: ['sample', id],
+      queryKey: ['auth', 'me'],
       queryFn: async () => {
-        const res = await apiClient.api.sample[':id'].$get({ param: { id: toValue(id) } })
+        const res = await apiClient.api.auth.me.$get()
         if (!res.ok) throw new Error(`Request failed: ${res.status}`)
         return res.json()
       },

@@ -22,14 +22,14 @@ route (src/app.ts) -> service (src/service/*.service.ts)
 - A **dao** is the only layer that talks to a datastore, behind an interface, so different
   runtime packages (`apps/backend-*`) can wire in their own concrete DAOs without touching service/repository/route code.
 
-`src/{service,repository,dao}/sample.*`, wired to `GET /sample/:id` in `src/app.ts`, is a worked
-reference for this exact chain. Read it before starting, and copy its shape rather than inventing
+The auth chain is a worked reference for this exact chain: `src/service/auth.service.ts` →
+`src/repository/user.repository.ts` → `src/dao/user.*`, wired to `/auth/*` in `src/app.ts`. Read it before starting, and copy its shape rather than inventing
 a new one.
 
 ## Procedure
 
 Build bottom-up — each layer's test needs the layer below it to already have an interface.
-Replace `<name>` below with the resource name (e.g. `widget`), matching the `sample.*` naming
+Replace `<name>` below with the resource name (e.g. `widget`), matching the `user.*` naming
 scheme.
 
 ### 1. DAO layer
@@ -39,7 +39,9 @@ scheme.
 - `src/dao/<name>.memory.ts` — a concrete in-memory implementation (`create<Name>Dao`). When/if
   a real datastore is needed, add its implementation in the runtime package, not here
   (`apps/backend-*/src/dao/<name>.<datastore>.ts`; see that package's `AGENTS.md`).
-- `src/dao/<name>.memory.test.ts` — co-located test for the concrete DAO (see `sample.memory.test.ts`).
+- `src/dao/<name>.memory.test.ts` — co-located test for the concrete DAO (see `user.memory.test.ts`). Write
+  the DAO's behavior once as a contract (`src/dao/<name>.contract.ts`, see `user.contract.ts`) and
+  run it from both the memory test and the runtime package's datastore DAO test.
 
 ### 2. Repository layer
 
@@ -48,7 +50,7 @@ scheme.
   the domain entity.
 - `src/repository/<name>.repository.test.ts` — co-located test, using a hand-written fake
   `<Name>Dao` (not the real `.memory` implementation) so the test only exercises the repository's
-  mapping logic (see `sample.repository.test.ts`).
+  mapping logic (see `user.repository.test.ts`).
 
 ### 3. Service layer
 
@@ -57,7 +59,7 @@ scheme.
   logic and orchestration. Express "not found" / "invalid" as `null` or a thrown error — never an
   HTTP status here.
 - `src/service/<name>.service.test.ts` — co-located test, using a hand-written fake
-  `<Name>Repository` (see `sample.service.test.ts`).
+  `<Name>Repository` (see `auth.service.test.ts`).
 
 ### 4. Route layer (`src/app.ts`)
 
@@ -74,7 +76,7 @@ scheme.
 
 - Update the runtime package's entrypoint (in `apps/backend-*/src/`) to construct the real
   dao -> repository -> service chain and pass it into `createApp`, the same way it already does
-  for `sampleService`.
+  for `authService`.
 
 ### 6. Validate
 
@@ -90,5 +92,3 @@ vp test    # or: vp run backend#test
 - Each layer's test fakes only the interface directly below it, not the real implementation, so
   layers stay independently testable. The DAO's own test is the only one that touches the real
   (in this case in-memory) implementation.
-- Once real endpoints make `sample.*` (files and the `/sample/:id` route) unnecessary as a
-  reference, delete them per `apps/backend/AGENTS.md`.

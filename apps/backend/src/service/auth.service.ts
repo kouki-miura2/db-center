@@ -51,6 +51,11 @@ export interface AuthService {
     userId: string
     termsVersion: string
   }) => Promise<{ user: AuthUserView; consentRequired: false }>
+  /**
+   * Development login: signs in as the user of this email, registering them (as agreeing to the
+   * current terms) on first use. Only reachable when the runtime package enables it.
+   */
+  devSignIn: (input: { email: string; name: string }) => Promise<RegisterResult>
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -163,5 +168,43 @@ export const createAuthService = (deps: {
     assertCurrentTerms(termsVersion)
     const user = await deps.users.recordConsent({ userId, termsVersion, agreedAt: Date.now() })
     return { user: toView(user), consentRequired: false }
+  },
+
+  devSignIn: async ({ email, name }) => {
+    // A Google `sub` can't start with "dev:", so development users never collide with real ones.
+    const googleSub = `dev:${email.toLowerCase()}`
+    const existing = await deps.users.findByGoogleSub(googleSub)
+    const now = Date.now()
+    if (existing) {
+      const { record, session } = await newSession(existing.id, now)
+      const user = await deps.users.recordLogin(
+        { userId: existing.id, email: existing.email, lastLoginAt: now },
+        record,
+      )
+      return {
+        status: 'signed_in',
+        user: toView(user),
+        consentRequired: user.termsVersion !== TERMS_VERSION,
+        session,
+      }
+    }
+    const userId = crypto.randomUUID()
+    const { record, session } = await newSession(userId, now)
+    const user = await deps.users.register(
+      {
+        id: userId,
+        googleSub,
+        email: email.toLowerCase(),
+        name,
+        termsVersion: TERMS_VERSION,
+        agreedAt: now,
+        lastLoginAt: now,
+        productsRevision: 1,
+        createdAt: now,
+        deletedAt: null,
+      },
+      record,
+    )
+    return { status: 'signed_in', user: toView(user), consentRequired: false, session }
   },
 })

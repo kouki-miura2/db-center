@@ -76,6 +76,19 @@ Runs `apps/backend` on Cloudflare Workers.
 vp run backend-worker#dev
 ```
 
+Local settings go in `apps/backend-worker/.dev.vars` (untracked):
+
+```
+DEV_LOGIN=true              # development login (POST /api/auth/dev-login) and an http session cookie
+# GOOGLE_CLIENT_ID=<web OAuth client id>   # only to try Google sign-in locally
+```
+
+Apply the D1 migrations to the local database first (and after adding one):
+
+```bash
+vp run backend-worker#migrate:local
+```
+
 - Build (frontend + dry-run Worker bundle):
 
 ```bash
@@ -87,6 +100,13 @@ vp run -t backend-worker#build
 ```bash
 vp run backend-worker#deploy
 ```
+
+Before the first deploy, set the Google OAuth client ID in both places (without it, Google sign-in is rejected):
+
+- Backend: `npx wrangler secret put GOOGLE_CLIENT_ID` (run in `apps/backend-worker`).
+- Frontend: `VITE_GOOGLE_WEB_CLIENT_ID` in `apps/frontend/.env.local`.
+
+Never set `DEV_LOGIN` for a deployed Worker.
 
 - Regenerate Workers binding types:
 

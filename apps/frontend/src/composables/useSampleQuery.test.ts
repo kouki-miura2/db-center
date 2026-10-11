@@ -3,21 +3,21 @@ import { afterEach, expect, test, vi } from 'vite-plus/test'
 import { effectScope } from 'vue'
 
 vi.mock('../api/client.ts', () => ({
-  apiClient: { api: { sample: { ':id': { $get: vi.fn() } } } },
+  apiClient: { api: { auth: { me: { $get: vi.fn() } } } },
 }))
 
 import { apiClient } from '../api/client.ts'
 import { useSampleQuery } from './useSampleQuery.ts'
 
-type SampleResponse = Awaited<ReturnType<(typeof apiClient.api.sample)[':id']['$get']>>
+type MeResponse = Awaited<ReturnType<typeof apiClient.api.auth.me.$get>>
 
-const mockedGet = vi.mocked(apiClient.api.sample[':id'].$get)
+const mockedGet = vi.mocked(apiClient.api.auth.me.$get)
 
 /** Runs the composable inside its own effect scope, mirroring the lifetime it'd have in a component. */
-const runSampleQuery = (id: string) => {
+const runSampleQuery = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const scope = effectScope()
-  const query = scope.run(() => useSampleQuery(id, queryClient))
+  const query = scope.run(() => useSampleQuery(queryClient))
   if (!query) throw new Error('effectScope.run returned undefined')
   return { query, dispose: () => scope.stop() }
 }
@@ -26,28 +26,30 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-test('resolves the sample response from the API client', async () => {
-  mockedGet.mockResolvedValue({
-    ok: true,
-    json: async () => ({ id: '1', message: 'Sample "A label"' }),
-  } as unknown as SampleResponse)
+const me = {
+  user: { id: 'u1', name: 'はなこ', email: 'hanako@example.com' },
+  consentRequired: false,
+}
 
-  const { query, dispose } = runSampleQuery('1')
+test('resolves the response from the API client', async () => {
+  mockedGet.mockResolvedValue({ ok: true, json: async () => me } as unknown as MeResponse)
+
+  const { query, dispose } = runSampleQuery()
 
   await vi.waitFor(() => expect(query.isSuccess.value).toBe(true))
-  expect(query.data.value).toEqual({ id: '1', message: 'Sample "A label"' })
-  expect(mockedGet).toHaveBeenCalledWith({ param: { id: '1' } })
+  expect(query.data.value).toEqual(me)
+  expect(mockedGet).toHaveBeenCalledTimes(1)
 
   dispose()
 })
 
 test('surfaces a non-ok response as an error', async () => {
-  mockedGet.mockResolvedValue({ ok: false, status: 404 } as unknown as SampleResponse)
+  mockedGet.mockResolvedValue({ ok: false, status: 401 } as unknown as MeResponse)
 
-  const { query, dispose } = runSampleQuery('missing')
+  const { query, dispose } = runSampleQuery()
 
   await vi.waitFor(() => expect(query.isError.value).toBe(true))
-  expect(query.error.value?.message).toBe('Request failed: 404')
+  expect(query.error.value?.message).toBe('Request failed: 401')
 
   dispose()
 })

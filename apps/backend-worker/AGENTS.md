@@ -7,3 +7,4 @@
 - D1 writes use `src/dao/batch.ts`: one `runBatch` per write, a `staleGuard` right after each optimistically locked UPDATE, a `limitGuard` after an INSERT that a limit caps. D1 DAO tests run against a fresh local D1 from `createTestD1` (`src/dao/test-d1.ts`, all migrations applied); never import it from Worker code.
 - Config is `wrangler.jsonc`. After adding bindings, run `vp run backend-worker#cf-typegen` to regenerate `worker-configuration.d.ts` (untracked).
 - Secrets: use `wrangler secret put`, never `.env` / commit `.dev.vars`.
+- `src/worker.ts` builds the app on the first request (D1 is only reachable through `env`) with authentication always on. Values outside `wrangler.jsonc` are typed in its `WorkerEnv`: `GOOGLE_CLIENT_ID` (secret) and `DEV_LOGIN` (`.dev.vars` only: turns on the development login and the http session cookie; never set it for a deployed Worker).

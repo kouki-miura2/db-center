@@ -7,7 +7,6 @@ import { z } from 'zod'
 import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
-import type { SampleService } from './service/sample.service.ts'
 import { text, validate } from './validation.ts'
 
 export interface AuthConfig {
@@ -35,7 +34,12 @@ export const SESSION_COOKIE = {
  * Paths reachable without a session: signing in, signing up, and signing out (which must work with
  * an expired session too). Runtime packages pass them as `auth.excludePaths`.
  */
-export const PUBLIC_PATHS = ['/api/auth/google', '/api/auth/register', '/api/auth/logout']
+export const PUBLIC_PATHS = [
+  '/api/auth/google',
+  '/api/auth/register',
+  '/api/auth/logout',
+  '/api/auth/dev-login',
+]
 
 /**
  * Paths a signed-in user can still use before agreeing to the current terms: their own account
@@ -43,11 +47,18 @@ export const PUBLIC_PATHS = ['/api/auth/google', '/api/auth/register', '/api/aut
  */
 const CONSENT_EXEMPT_PATHS = ['/api/auth/me', '/api/auth/consent', '/api/auth/logout']
 
+// Development login only answers requests to these hosts, as a second safeguard.
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]']
+
 export interface AppDependencies {
-  sampleService: SampleService
   authService: AuthService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
+  /**
+   * Development login (`POST /api/auth/dev-login`). Off unless the runtime package turns it on
+   * explicitly for local development; never on in production.
+   */
+  devLogin: boolean
 }
 
 // Long enough for any Google ID token (a JWT of about 1 KB).
@@ -214,16 +225,23 @@ export const createApp = (deps: AppDependencies) => {
         deleteCookie(c, deps.sessionCookie.name, { path: '/', secure: deps.sessionCookie.secure })
         return c.body(null, 204)
       })
-      // Reference implementation of one endpoint through the app -> service -> repository -> dao
-      // layering: the runtime entrypoints wire the concrete dependencies, this route only talks
-      // to `SampleService`. Build real routes the same way, then delete this route and the
-      // `service/sample.*`, `repository/sample.*`, `dao/sample.*` files once they're not needed
-      // as a reference anymore.
-      .get('/sample/:id', async (c) => {
-        const sample = await deps.sampleService.getSample(c.req.param('id'))
-        if (!sample) return c.json({ error: 'Not Found' }, 404)
-        return c.json(sample)
-      })
+      // Development login: signs in as any email without Google. Answers 404 unless the runtime
+      // package turned it on explicitly and the request is to localhost.
+      .post(
+        '/auth/dev-login',
+        validate(
+          'json',
+          z.strictObject({ email: z.email(), name: text(LIMITS.userNameMaxLength).min(1) }),
+        ),
+        async (c) => {
+          if (!deps.devLogin || !LOCAL_HOSTNAMES.includes(new URL(c.req.url).hostname)) {
+            throw new AppError('not_found')
+          }
+          const { session, ...body } = await deps.authService.devSignIn(c.req.valid('json'))
+          setSessionCookie(c, session)
+          return c.json(body)
+        },
+      )
   )
 }
 

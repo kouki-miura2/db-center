@@ -32,7 +32,6 @@ beforeEach(() => {
   db = createMemoryDb()
   const users = createUserMemoryDao(db)
   app = createApp({
-    sampleService: { getSample: async () => null },
     authService: createAuthService({ verifier, users: createUserRepository(users) }),
     // As in production: every path needs a session except the public ones.
     auth: {
@@ -41,6 +40,7 @@ beforeEach(() => {
       excludePaths: PUBLIC_PATHS,
     },
     sessionCookie: SESSION_COOKIE.production,
+    devLogin: false,
   })
 })
 

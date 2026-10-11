@@ -4,7 +4,7 @@ import { watch } from 'vue'
 import { useSampleQuery } from '../composables/useSampleQuery.ts'
 import { useNotificationStore } from '../stores/notification.ts'
 
-const { data, isPending, isError, error, refetch } = useSampleQuery('1')
+const { data, isPending, isError, error, refetch } = useSampleQuery()
 const notification = useNotificationStore()
 
 watch(error, (err) => {
@@ -19,7 +19,7 @@ watch(error, (err) => {
       <v-card-text>
         <p v-if="isPending">Loading...</p>
         <p v-else-if="isError">Error: {{ error?.message }}</p>
-        <p v-else>{{ data?.message ?? 'unknown' }}</p>
+        <p v-else>{{ data?.user.name ?? 'unknown' }}</p>
       </v-card-text>
       <v-card-actions>
         <v-btn text="Refresh" :loading="isPending" @click="refetch()" />

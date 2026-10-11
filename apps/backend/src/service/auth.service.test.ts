@@ -186,3 +186,32 @@ test('refuses consent to a version that is no longer current', async () => {
   ).rejects.toMatchObject({ code: 'invalid_state' })
   expect(calls.consents).toEqual([])
 })
+
+test('development login registers a new user as agreeing to the current terms', async () => {
+  const { users, calls } = fakeUsers(null)
+
+  const result = await createAuthService({ verifier: verifier(false), users }).devSignIn({
+    email: 'Dev@Example.com',
+    name: '開発者',
+  })
+
+  expect(result).toMatchObject({ status: 'signed_in', consentRequired: false })
+  expect(calls.registered[0]).toMatchObject({
+    googleSub: 'dev:dev@example.com',
+    email: 'dev@example.com',
+    name: '開発者',
+    termsVersion: TERMS_VERSION,
+  })
+})
+
+test('development login signs an existing development user in again', async () => {
+  const { users, calls } = fakeUsers(existing)
+
+  await createAuthService({ verifier: verifier(false), users }).devSignIn({
+    email: 'a@example.com',
+    name: 'ignored',
+  })
+
+  expect(calls.registered).toEqual([])
+  expect(calls.sessions).toHaveLength(1)
+})
