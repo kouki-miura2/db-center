@@ -96,6 +96,38 @@ export const createVersionService = (deps: {
     }
   }
   return {
+    finalize: async (input: VersionChangeInput & { createNext: boolean }) => {
+      const context = await authorize(input.userId, input.versionId, 'finalizeVersion')
+      if (context.version.status !== 'provisional') throw new AppError('invalid_state')
+      const write = writeInput(context, input, 'finalizeVersion', 'finalize')
+      return deps.versions.finalize({
+        ...write,
+        memo: input.memo,
+        next: input.createNext
+          ? {
+              id: crypto.randomUUID(),
+              audit: {
+                ...write.audit,
+                id: crypto.randomUUID(),
+                action: 'create',
+                summary: `${context.databaseName} 新しいバージョン`,
+              },
+            }
+          : null,
+      })
+    },
+    create: async (input: VersionChangeInput & { productId: string; databaseId: string }) => {
+      await requireMembership(deps.products, input.productId, input.userId)
+      const context = await authorize(input.userId, input.versionId, 'createVersion')
+      if (context.productId !== input.productId || context.version.databaseId !== input.databaseId)
+        throw new AppError('not_found')
+      if (context.version.status !== 'final') throw new AppError('invalid_state')
+      const write = writeInput(context, input, 'createVersion', 'create')
+      return deps.versions.create({
+        ...write,
+        clone: { id: crypto.randomUUID(), audit: write.audit },
+      })
+    },
     validate: ({ userId, versionId }: { userId: string; versionId: string }) =>
       validate(userId, versionId),
     provisional: async (input: VersionChangeInput) => {

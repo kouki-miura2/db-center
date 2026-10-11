@@ -1070,6 +1070,80 @@ test('object routes isolate products, lock each object and return deletion delta
   ).toBe('unchanged')
 })
 
+test('finalize and new version routes enforce state, permissions and compacted cache reads', async () => {
+  const { body } = await createProduct('u1', 'version-final')
+  const productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const created = await (
+    await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+  ).json()
+  const id = created.database.latestVersion.id
+  const path = `/api/versions/${id}`
+  const initial = await (await app.request(path, as('u1'))).json()
+  const editing = {
+    expectedUpdatedAt: initial.data.version.updatedAt,
+    expectedRevision: initial.revision,
+  }
+  expect((await app.request(`${path}/finalize`, as('u1', 'POST', editing))).status).toBe(409)
+  const provisional = await (
+    await app.request(`${path}/provisional`, as('u2', 'POST', editing))
+  ).json()
+  const input = {
+    expectedUpdatedAt: provisional.version.updatedAt,
+    expectedRevision: provisional.revisions.version,
+  }
+  expect((await app.request(`${path}/finalize`, as('u2', 'POST', input))).status).toBe(403)
+  expect(
+    (await app.request(`${path}/finalize`, as('u1', 'POST', { ...input, unexpected: true })))
+      .status,
+  ).toBe(400)
+  const finalResponse = await app.request(
+    `${path}/finalize`,
+    as('u1', 'POST', { ...input, memo: 'release' }),
+  )
+  expect(finalResponse.status).toBe(200)
+  const final = await finalResponse.json()
+  expect(final.version.status).toBe('final')
+  expect(final.createdVersion).toBeNull()
+  const compacted = await (
+    await app.request(`${path}?revision=${initial.revision}`, as('u2'))
+  ).json()
+  expect(compacted.mode).toBe('full')
+  const clonePath = `/api/products/${productId}/databases/${created.database.id}/versions`
+  const clone = {
+    sourceVersionId: id,
+    expectedUpdatedAt: final.version.updatedAt,
+    expectedRevision: final.version.revision,
+  }
+  expect((await app.request(clonePath, as('u2', 'POST', clone))).status).toBe(403)
+  const nextResponse = await app.request(clonePath, as('u1', 'POST', clone))
+  expect(nextResponse.status).toBe(200)
+  const next = await nextResponse.json()
+  expect(next.version).toMatchObject({ status: 'editing', number: 2, sourceVersionId: id })
+  expect((await app.request(clonePath, as('u1', 'POST', clone))).status).toBe(409)
+  const p2 = await (
+    await app.request(
+      `/api/versions/${next.version.id}/provisional`,
+      as('u1', 'POST', { expectedUpdatedAt: next.version.updatedAt, expectedRevision: 1 }),
+    )
+  ).json()
+  const f2 = await (
+    await app.request(
+      `/api/versions/${next.version.id}/finalize`,
+      as('u1', 'POST', {
+        expectedUpdatedAt: p2.version.updatedAt,
+        expectedRevision: p2.version.revision,
+        createNext: true,
+      }),
+    )
+  ).json()
+  expect(f2.createdVersion).toMatchObject({
+    status: 'editing',
+    number: 3,
+    sourceVersionId: next.version.id,
+  })
+})
+
 test('provisional checks block errors, allow warnings and enforce revert permissions', async () => {
   const { body: product } = await createProduct('u1', 'version-state')
   const productId = product.product.id

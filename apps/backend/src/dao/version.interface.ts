@@ -16,7 +16,19 @@ export interface ApplicationRecord {
   connectionName: string
   status: 'running' | 'succeeded' | 'failed'
 }
+export interface VersionResult {
+  version: VersionRecord
+  revisions: { version: number; database: number; product: number }
+}
+export interface VersionClone {
+  id: string
+  audit: AuditLogRecord
+}
 export interface VersionDao {
+  finalize: (
+    input: VersionWrite & { memo: string | null; next: VersionClone | null },
+  ) => Promise<VersionResult & { createdVersion: VersionRecord | null }>
+  create: (input: VersionWrite & { clone: VersionClone }) => Promise<VersionResult>
   applications: (versionId: string) => Promise<ApplicationRecord[]>
   transition: (
     input: VersionWrite & {

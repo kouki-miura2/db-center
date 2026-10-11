@@ -700,6 +700,43 @@ export const createApp = (deps: AppDependencies) => {
             }),
           ),
       )
+      .post(
+        '/versions/:versionId/finalize',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('json', versionChange.extend({ createNext: z.boolean().default(false) })),
+        async (c) =>
+          c.json(
+            await deps.versionService.finalize({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/products/:productId/databases/:databaseId/versions',
+        validate('param', databaseParams),
+        validate(
+          'json',
+          z.strictObject({
+            sourceVersionId: z.uuid(),
+            expectedUpdatedAt,
+            expectedRevision: z.number().int().positive(),
+          }),
+        ),
+        async (c) => {
+          const { sourceVersionId, ...input } = c.req.valid('json')
+          return c.json(
+            await deps.versionService.create({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...input,
+              versionId: sourceVersionId,
+              memo: null,
+            }),
+          )
+        },
+      )
       // The audit log, newest first: `before` pages back, `after` gets what's new since.
       .get(
         '/products/:productId/audit-logs',
