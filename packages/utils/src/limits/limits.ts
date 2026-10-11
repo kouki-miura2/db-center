@@ -65,6 +65,8 @@ export const LIMITS = {
   revisionCheckScopes: 100,
   /** Audit log entries per page (newest first). Used by the API. Provisional. */
   auditLogPageSize: 50,
+  /** Rows one scheduled cleanup statement handles at a time; the scheduled job repeats it until nothing is left. Used by the scheduled job. Provisional. */
+  cleanupBatchSize: 500,
   /** PostgreSQL connection timeout, in seconds. Checked by the runtime adapter. Provisional. */
   postgresConnectTimeoutSeconds: 10,
   /** PostgreSQL statement timeout, in seconds. Checked by the runtime adapter. Provisional. */

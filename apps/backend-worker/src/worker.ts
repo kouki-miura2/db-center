@@ -6,6 +6,7 @@ import { createDatabaseRepository } from 'backend/src/repository/database.reposi
 import { createDeploymentRepository } from 'backend/src/repository/deployment.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createInvitationRepository } from 'backend/src/repository/invitation.repository.ts'
+import { createMaintenanceRepository } from 'backend/src/repository/maintenance.repository.ts'
 import { createMemberRepository } from 'backend/src/repository/member.repository.ts'
 import { createObjectRepository } from 'backend/src/repository/object.repository.ts'
 import { createProductRepository } from 'backend/src/repository/product.repository.ts'
@@ -21,6 +22,7 @@ import { createDefinitionExportService } from 'backend/src/service/definition-ex
 import { createDeploymentService } from 'backend/src/service/deployment.service.ts'
 import { createInspectionService } from 'backend/src/service/inspection.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
+import { createMaintenanceService } from 'backend/src/service/maintenance.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
@@ -35,6 +37,7 @@ import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createDatabaseD1Dao } from './dao/database.d1.ts'
 import { createDeploymentD1Dao } from './dao/deployment.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
+import { createMaintenanceD1Dao } from './dao/maintenance.d1.ts'
 import { createMemberD1Dao } from './dao/member.d1.ts'
 import { createObjectD1Dao } from './dao/object.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
@@ -162,6 +165,15 @@ const buildApp = (env: WorkerEnv) => {
 // app on the first one and reuse it.
 let app: ReturnType<typeof buildApp> | undefined
 
+/** The daily cleanup (`triggers.crons` in `wrangler.jsonc`). */
+const buildMaintenance = (env: WorkerEnv) =>
+  createMaintenanceService({
+    maintenance: createMaintenanceRepository(createMaintenanceD1Dao(env.DB)),
+  })
+
 export default {
   fetch: (request, env, ctx) => (app ??= buildApp(env)).fetch(request, env, ctx),
+  scheduled: (controller, env, ctx) => {
+    ctx.waitUntil(buildMaintenance(env).runDaily(controller.scheduledTime))
+  },
 } satisfies ExportedHandler<WorkerEnv>

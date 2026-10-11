@@ -23,6 +23,10 @@
       "migrations_dir": "migrations",
     },
   ],
+  // The daily cleanup (`scheduled` in src/worker.ts), at 03:00 JST.
+  "triggers": {
+    "crons": ["0 18 * * *"],
+  },
   "observability": {
     "enabled": true,
   },
