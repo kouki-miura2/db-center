@@ -4,12 +4,14 @@ import type { ConnectionRepository } from '../repository/connection.repository.t
 import type { DeploymentStorage } from '../repository/deployment-runtime.interface.ts'
 import type { DeploymentRepository } from '../repository/deployment.repository.ts'
 import type { ObjectRepository } from '../repository/object.repository.ts'
+import { readPostgresCatalog } from '../repository/postgres-catalog.ts'
 import {
   inspectPostgres,
   type PostgresAdapter,
   type PgSession,
 } from '../repository/postgres.interface.ts'
 import type { SecretBox } from '../repository/secret-box.interface.ts'
+import { deploymentChecks } from './deployment-checks.ts'
 import type { DeploymentPlan } from './deployment.service.ts'
 import { hashText } from './drift.ts'
 
@@ -29,6 +31,7 @@ export const createDeploymentExecutor = (deps: {
       committed = false,
       count = 0,
       locked = false
+    let precheckReasons: string[] = []
     const groups: Record<string, { statements: number; rows: number; durationMs: number }> = {}
     let lastStep: {
       index: number
@@ -41,6 +44,7 @@ export const createDeploymentExecutor = (deps: {
         groups,
         lastStep,
         committed,
+        ...(precheckReasons.length ? { precheckReasons } : {}),
         ...(code ? { code, requiresInspection: true } : {}),
       })
     try {
@@ -49,7 +53,7 @@ export const createDeploymentExecutor = (deps: {
         throw new AppError('invalid_state')
       const plan = JSON.parse(encoded) as DeploymentPlan
       if (
-        plan.kind !== 'build' ||
+        plan.kind !== record.kind ||
         plan.target.versionId !== record.toVersionId ||
         plan.databaseId !== record.databaseId ||
         plan.productId !== record.productId
@@ -60,13 +64,21 @@ export const createDeploymentExecutor = (deps: {
       const frozen = JSON.parse(record.connectionSnapshot) as ConnectionRecord,
         current = await deps.connections.findCredentials(record.connectionId!)
       const target = await deps.objects.findContext(record.toVersionId)
+      const source = record.fromVersionId
+        ? await deps.objects.findContext(record.fromVersionId)
+        : null
       if (
         !current ||
         current.productId !== record.productId ||
         current.updatedAt !== frozen.updatedAt ||
         !target ||
         target.version.revision !== record.targetRevision ||
-        target.version.status === 'editing'
+        target.version.status === 'editing' ||
+        (record.fromVersionId &&
+          (!source ||
+            source.version.status === 'editing' ||
+            source.version.revision !== record.sourceRevision ||
+            source.version.databaseId !== record.databaseId))
       )
         throw new AppError('stale_update')
       const password =
@@ -79,7 +91,10 @@ export const createDeploymentExecutor = (deps: {
           ?.locked === true
       if (!locked) throw new AppError('invalid_state')
       const inspection = await inspectPostgres(session)
-      if (!inspection.supported || !inspection.empty) throw new AppError('invalid_state')
+      const catalog = inspection.supported ? await readPostgresCatalog(session) : null
+      const checks = deploymentChecks(plan, inspection, catalog)
+      precheckReasons = checks.reasons
+      if (checks.reasons.length) throw new AppError('invalid_state', { message: checks.reasons[0] })
       const execute = async (sql: string, phase: string, objectKey: string | null = null) => {
         lastStep = { index: count, objectKey, phase, status: 'running' }
         // Persist intent before executing. Lost acknowledgements never permit a replay.

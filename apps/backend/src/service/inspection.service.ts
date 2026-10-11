@@ -1,5 +1,6 @@
 import { AppError } from '../error.ts'
 import type { ConnectionRepository } from '../repository/connection.repository.ts'
+import { readPostgresCatalog } from '../repository/postgres-catalog.ts'
 import { inspectPostgres, type PostgresAdapter } from '../repository/postgres.interface.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SecretBox } from '../repository/secret-box.interface.ts'
@@ -32,6 +33,7 @@ export const createInspectionService = (deps: {
       // Catalog inspection failures also contain only a safe, fixed message.
       return {
         ...result,
+        catalog: result.supported ? await readPostgresCatalog(session) : null,
         connectionId: connection.id,
         connectionName: connection.name,
         connectionUpdatedAt: connection.updatedAt,

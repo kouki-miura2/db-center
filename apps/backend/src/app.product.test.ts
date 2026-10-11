@@ -861,6 +861,7 @@ describe('databases', () => {
           updatedAt: database.updatedAt,
         },
         commonColumns: [],
+        deployments: [],
         versions: [
           {
             id: database.latestVersion.id,

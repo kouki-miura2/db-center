@@ -12,11 +12,20 @@ import { deploymentView, type DeploymentRepository } from '../repository/deploym
 import type { ObjectRepository } from '../repository/object.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SqlValidator } from '../repository/sql-validator.interface.ts'
-import { generatePostgresDdl } from './ddl-postgres.ts'
-import { ddlOptionsSchema, normalizedDesign, sqlLiteral, type SqlStep } from './ddl.ts'
-import { canonical } from './design-diff.ts'
+import { generatePostgresDdl, postgresVersionTable } from './ddl-postgres.ts'
+import {
+  ddlOptionsSchema,
+  normalizedDesign,
+  sqlLiteral,
+  scriptResult,
+  type SqlStep,
+} from './ddl.ts'
+import { deploymentChecks } from './deployment-checks.ts'
+import { canonical, diffDesigns } from './design-diff.ts'
 import { designHash, hashText } from './drift.ts'
 import type { InspectionService } from './inspection.service.ts'
+import { generatePostgresMigration } from './migration-postgres.ts'
+import { migrationOptionsSchema } from './migration.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
 import { requireMembership } from './product.service.ts'
 
@@ -25,6 +34,7 @@ export const deploymentPreviewSchema = z.strictObject({
   toVersionId: z.uuid(),
   fromVersionId: z.uuid().optional(),
   expectedRevision: z.number().int().nonnegative(),
+  migrationOptions: migrationOptionsSchema.omit({ includeDrops: true }).optional(),
 })
 export const deploymentRequestSchema = deploymentPreviewSchema.extend({ idempotencyKey: z.uuid() })
 export type DeploymentInput = z.infer<typeof deploymentPreviewSchema> & {
@@ -39,6 +49,7 @@ export interface DeploymentPlan {
   source: { versionId: string; revision: number; designHash: string } | null
   steps: SqlStep[]
   sql: string
+  dataLoss?: boolean
 }
 export const createDeploymentService = (deps: {
   products: ProductRepository
@@ -64,14 +75,56 @@ export const createDeploymentService = (deps: {
     if (scope.context.version.status === 'editing') throw new AppError('invalid_state')
     if (scope.context.version.revision !== input.expectedRevision)
       throw new AppError('stale_update')
-    if (input.kind !== 'build' || input.fromVersionId) throw new AppError('invalid_state')
+    if (input.kind === 'build' && (input.fromVersionId || input.migrationOptions))
+      throw new AppError('invalid_input')
     const objects = await normalizedDesign(scope.context, scope.objects, deps.sql)
-    const generated = await generatePostgresDdl(
+    let generated = await generatePostgresDdl(
       scope.context,
       objects,
       deps.sql,
       ddlOptionsSchema.parse({ versionTable: true }),
     )
+    let source: DeploymentPlan['source'] = null,
+      dataLoss = false
+    if (input.kind === 'migration') {
+      if (!input.fromVersionId || input.fromVersionId === input.toVersionId)
+        throw new AppError('invalid_input')
+      const before = await deps.objects.findScope(input.fromVersionId)
+      if (!before || before.context.version.databaseId !== scope.context.version.databaseId)
+        throw new AppError('not_found')
+      if (
+        before.context.version.status === 'editing' ||
+        before.context.version.number >= scope.context.version.number
+      )
+        throw new AppError('invalid_state')
+      const previous = await normalizedDesign(before.context, before.objects, deps.sql)
+      source = {
+        versionId: input.fromVersionId,
+        revision: before.context.version.revision,
+        designHash: await designHash(previous),
+      }
+      dataLoss = diffDesigns(previous, objects, 'postgresql18').impact.dataLoss
+      const migration = await generatePostgresMigration(
+        scope.context,
+        previous,
+        objects,
+        deps.sql,
+        migrationOptionsSchema.parse({ ...input.migrationOptions, includeDrops: true }),
+      )
+      if (!migration.complete) throw new AppError('invalid_state')
+      const steps = migration.steps.filter(
+        (v) => !(v.objectKey === null && v.sql.includes('"_dbcenter"."version"')),
+      )
+      // Always advance a successful no-op version, and never advance before outside DDL.
+      steps.push({
+        objectKey: null,
+        sql: (await postgresVersionTable(scope.context, objects))[2]!,
+        transactional: !steps.some(
+          (v) => !v.transactional && !v.beforeTransaction && !v.sql.startsWith('RESET '),
+        ),
+      })
+      generated = scriptResult(scope.context, steps, true, migration.warnings)
+    }
     const plan: DeploymentPlan = {
       kind: input.kind,
       databaseId: scope.context.version.databaseId,
@@ -81,7 +134,8 @@ export const createDeploymentService = (deps: {
         revision: input.expectedRevision,
         designHash: await designHash(objects),
       },
-      source: null,
+      source,
+      dataLoss,
       steps: generated.steps,
       sql: generated.sql,
     }
@@ -89,12 +143,12 @@ export const createDeploymentService = (deps: {
       userId: input.userId,
       connectionId: input.connectionId,
     })
+    const checks = deploymentChecks(plan, inspection, inspection.catalog ?? null)
     const reasons = [
       ...(!deps.storage || !deps.workflow ? ['not_configured'] : []),
-      ...(!inspection.supported ? ['unsupported_postgres'] : []),
-      ...(!inspection.empty ? ['database_not_empty'] : []),
+      ...checks.reasons,
     ]
-    return { plan, inspection, reasons }
+    return { plan, inspection, reasons, checks }
   }
   return {
     get: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
@@ -106,7 +160,7 @@ export const createDeploymentService = (deps: {
     },
     preview: async (input: DeploymentInput) => {
       const connection = await authorize(input.userId, input.connectionId)
-      const { plan, inspection, reasons } = await prepare(input, connection)
+      const { plan, inspection, reasons, checks } = await prepare(input, connection)
       return {
         canExecute: reasons.length === 0,
         reasons,
@@ -114,6 +168,9 @@ export const createDeploymentService = (deps: {
         sql: plan.sql,
         steps: plan.steps.map(({ sql: _sql, ...step }) => step),
         target: plan.target,
+        source: plan.source,
+        drift: checks.drift,
+        dataLoss: checks.dataLoss,
       }
     },
     accept: async (input: DeploymentInput & { idempotencyKey: string }) => {
@@ -124,6 +181,10 @@ export const createDeploymentService = (deps: {
           toVersionId: input.toVersionId,
           fromVersionId: input.fromVersionId ?? null,
           expectedRevision: input.expectedRevision,
+          migrationOptions:
+            input.kind === 'migration'
+              ? migrationOptionsSchema.parse({ ...input.migrationOptions, includeDrops: true })
+              : null,
         }),
       )
       const existing = await deps.deployments.findByKey(input.connectionId, input.idempotencyKey)
