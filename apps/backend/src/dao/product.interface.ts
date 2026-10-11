@@ -22,9 +22,24 @@ export interface MembershipRecord {
   joinedAt: number
 }
 
+/** A member of a product, with the name to show. */
+export interface MemberRecord {
+  userId: string
+  name: string
+  role: Role
+  joinedAt: number
+}
+
 export interface ProductDao {
   /** The user's membership of the product, or null if they aren't a member or it's deleted. */
   findMembership: (productId: string, userId: string) => Promise<MembershipRecord | null>
+  /**
+   * The product scope: the product and its members, read together so they match its revision.
+   * Null if the product is deleted or doesn't exist.
+   */
+  findScope: (
+    productId: string,
+  ) => Promise<{ product: ProductRecord; members: MemberRecord[] } | null>
   /** The user's product list revision (`users.products_revision`), reading that one row only. */
   findProductsRevision: (userId: string) => Promise<number | null>
   /** The user's product list and its revision, read together so they match. */

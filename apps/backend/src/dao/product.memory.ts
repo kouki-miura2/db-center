@@ -1,6 +1,12 @@
 import { AppError } from '../error.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
-import type { MembershipRecord, ProductDao, ProductRecord, Role } from './product.interface.ts'
+import type {
+  MemberRecord,
+  MembershipRecord,
+  ProductDao,
+  ProductRecord,
+  Role,
+} from './product.interface.ts'
 import type { UserRecord } from './user.interface.ts'
 import { nextUpdatedAt } from './write.ts'
 
@@ -54,6 +60,20 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
   findMembership: async (productId, userId) => {
     const row = members(db).get(memberKey(productId, userId))
     return row ? membership(db, row) : null
+  },
+
+  findScope: async (productId) => {
+    const product = activeProduct(db, productId)
+    if (!product) return null
+    const list: MemberRecord[] = [...members(db).values()]
+      .filter((row) => row.productId === productId)
+      .map((row) => ({
+        userId: row.userId,
+        name: users(db).get(row.userId)?.name ?? '',
+        role: row.role,
+        joinedAt: row.joinedAt,
+      }))
+    return { product: { ...product }, members: list }
   },
 
   findProductsRevision: async (userId) => users(db).get(userId)?.productsRevision ?? null,

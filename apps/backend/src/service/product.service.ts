@@ -3,7 +3,12 @@ import { LIMITS, type Target } from 'utils'
 import type { AuditLogRecord } from '../dao/audit-log.interface.ts'
 import type { Role } from '../dao/product.interface.ts'
 import { AppError } from '../error.ts'
-import type { Membership, Product, ProductRepository } from '../repository/product.repository.ts'
+import type {
+  Member,
+  Membership,
+  Product,
+  ProductRepository,
+} from '../repository/product.repository.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
 
 /** One row of the product list ("参照 > データの取得とキャッシュ": プロダクト一覧). */
@@ -26,6 +31,23 @@ export interface ProductView {
   updatedAt: number
 }
 
+export interface MemberView {
+  userId: string
+  name: string
+  role: Role
+  joinedAt: number
+}
+
+/**
+ * The product scope ("参照 > データの取得とキャッシュ": プロダクト): the product, the caller's role
+ * and the members. Connections, invitations and databases join it as they're built.
+ */
+export interface ProductScopeView {
+  product: ProductView
+  role: Role
+  members: MemberView[]
+}
+
 /** A cacheable scope: unchanged when the client's revision is current, otherwise all of it. */
 export type ScopeResult<T> =
   | { mode: 'unchanged'; revision: number }
@@ -36,6 +58,11 @@ export interface ProductService {
     userId: string,
     clientRevision?: number,
   ) => Promise<ScopeResult<ProductListItemView[]>>
+  getProduct: (input: {
+    userId: string
+    productId: string
+    clientRevision?: number
+  }) => Promise<ScopeResult<ProductScopeView>>
   createProduct: (input: {
     userId: string
     name: string
@@ -66,6 +93,12 @@ const toView = ({ id, name, target, createdAt, updatedAt }: Product): ProductVie
   createdAt,
   updatedAt,
 })
+
+const ROLE_ORDER: Record<Role, number> = { owner: 0, manager: 1, member: 2 }
+
+// Owner first, then managers, then members, each by when they joined.
+const byRoleThenJoined = (a: Member, b: Member) =>
+  ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.joinedAt - b.joinedAt
 
 const auditEntry = (entry: Omit<AuditLogRecord, 'id' | 'targetType'>): AuditLogRecord => ({
   id: crypto.randomUUID(),
@@ -113,6 +146,25 @@ export const createProductService = (deps: { products: ProductRepository }): Pro
       .map(toListItem)
       .sort((a, b) => a.name.localeCompare(b.name, 'ja') || a.id.localeCompare(b.id))
     return { mode: 'full', revision, data }
+  },
+
+  getProduct: async ({ userId, productId, clientRevision }) => {
+    // The membership read also returns the product's revision: enough to answer "unchanged".
+    const { product: current, role } = await requireMembership(deps.products, productId, userId)
+    if (current.revision === clientRevision) {
+      return { mode: 'unchanged', revision: current.revision }
+    }
+    const scope = await deps.products.findScope(productId)
+    if (!scope) throw new AppError('not_found')
+    return {
+      mode: 'full',
+      revision: scope.product.revision,
+      data: {
+        product: toView(scope.product),
+        role,
+        members: scope.members.toSorted(byRoleThenJoined).map((member) => ({ ...member })),
+      },
+    }
   },
 
   createProduct: async ({ userId, name, target }) => {

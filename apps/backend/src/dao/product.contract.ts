@@ -87,6 +87,23 @@ export const productDaoContract = (setup: () => Promise<ProductDaoFixture>) => {
     ])
   })
 
+  test('reads the product scope with its members, and nothing for a deleted product', async () => {
+    const f = await setup()
+    await create(f.dao, 'p1')
+    await f.addMember('p1', 'u2', 'member')
+
+    const scope = await f.dao.findScope('p1')
+
+    expect(scope?.product).toEqual(product('p1'))
+    expect(scope?.members.toSorted((a, b) => a.userId.localeCompare(b.userId))).toEqual([
+      { userId: 'u1', name: 'u1', role: 'owner', joinedAt: 1000 },
+      { userId: 'u2', name: 'u2', role: 'member', joinedAt: 1000 },
+    ])
+    expect(await f.dao.findScope('missing')).toBeNull()
+    await f.markDeleted('p1')
+    expect(await f.dao.findScope('p1')).toBeNull()
+  })
+
   test('refuses a name the owner already uses, but not another owner’s or a deleted one', async () => {
     const f = await setup()
     await create(f.dao, 'p1', 'shop')

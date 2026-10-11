@@ -18,6 +18,7 @@ const product = (overrides: Partial<Product> = {}): Product => ({
 // A hand-written ProductRepository; tests replace only the methods they exercise.
 const fakeProducts = (overrides: Partial<ProductRepository> = {}): ProductRepository => ({
   findMembership: async () => null,
+  findScope: async () => null,
   findProductsRevision: async () => 5,
   listForUser: async () => ({ revision: 5, memberships: [] }),
   create: async () => ({ productsRevision: 6 }),
@@ -138,4 +139,49 @@ test('refuses a member renaming, and hides the product from a non-member', async
   await expect(asMember.renameProduct(input)).rejects.toMatchObject({ code: 'forbidden' })
   await expect(asStranger.renameProduct(input)).rejects.toMatchObject({ code: 'not_found' })
   expect(rename).not.toHaveBeenCalled()
+})
+
+test('answers the product scope unchanged from the membership read alone', async () => {
+  const findScope = vi.fn()
+  const service = createProductService({
+    products: fakeProducts({ findMembership: async () => membership('member'), findScope }),
+  })
+
+  expect(await service.getProduct({ userId: 'u1', productId: 'p1', clientRevision: 3 })).toEqual({
+    mode: 'unchanged',
+    revision: 3,
+  })
+  expect(findScope).not.toHaveBeenCalled()
+})
+
+test('returns the whole product scope with the role and members in role order', async () => {
+  const service = createProductService({
+    products: fakeProducts({
+      findMembership: async () => membership('manager'),
+      findScope: async () => ({
+        product: product({ revision: 4 }),
+        members: [
+          { userId: 'u3', name: 'c', role: 'member', joinedAt: 1 },
+          { userId: 'u2', name: 'b', role: 'manager', joinedAt: 3 },
+          { userId: 'u1', name: 'a', role: 'owner', joinedAt: 2 },
+          { userId: 'u4', name: 'd', role: 'manager', joinedAt: 2 },
+        ],
+      }),
+    }),
+  })
+
+  // The client holds revision 2; the product is at 3 (membership) and 4 by the time it's read.
+  const result = await service.getProduct({ userId: 'u2', productId: 'p1', clientRevision: 2 })
+
+  expect(result).toMatchObject({ mode: 'full', revision: 4, data: { role: 'manager' } })
+  if (result.mode !== 'full') throw new Error('expected full')
+  expect(result.data.members.map((m) => m.userId)).toEqual(['u1', 'u4', 'u2', 'u3'])
+})
+
+test('hides the product scope from a non-member', async () => {
+  const service = createProductService({ products: fakeProducts() })
+
+  await expect(service.getProduct({ userId: 'u9', productId: 'p1' })).rejects.toMatchObject({
+    code: 'not_found',
+  })
 })

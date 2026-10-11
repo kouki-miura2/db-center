@@ -1,5 +1,11 @@
 import type { AuditLogRecord } from '../dao/audit-log.interface.ts'
-import type { MembershipRecord, ProductDao, ProductRecord, Role } from '../dao/product.interface.ts'
+import type {
+  MemberRecord,
+  MembershipRecord,
+  ProductDao,
+  ProductRecord,
+  Role,
+} from '../dao/product.interface.ts'
 
 /** A product that isn't deleted, as the services see it. */
 export interface Product {
@@ -17,8 +23,11 @@ export interface Membership {
   joinedAt: number
 }
 
+export type Member = MemberRecord
+
 export interface ProductRepository {
   findMembership: (productId: string, userId: string) => Promise<Membership | null>
+  findScope: (productId: string) => Promise<{ product: Product; members: Member[] } | null>
   findProductsRevision: (userId: string) => Promise<number | null>
   listForUser: (userId: string) => Promise<{ revision: number; memberships: Membership[] }>
   create: (input: {
@@ -57,6 +66,10 @@ export const createProductRepository = (dao: ProductDao): ProductRepository => (
   findMembership: async (productId, userId) => {
     const record = await dao.findMembership(productId, userId)
     return record ? toMembership(record) : null
+  },
+  findScope: async (productId) => {
+    const scope = await dao.findScope(productId)
+    return scope ? { product: toProduct(scope.product), members: scope.members } : null
   },
   findProductsRevision: (userId) => dao.findProductsRevision(userId),
   listForUser: async (userId) => {

@@ -18,6 +18,10 @@ const audit = {} as AuditLogRecord
 const created: Parameters<ProductDao['create']>[0][] = []
 const fakeDao: ProductDao = {
   findMembership: async () => ({ product: record, role: 'manager', joinedAt: 5 }),
+  findScope: async () => ({
+    product: record,
+    members: [{ userId: 'u1', name: 'はなこ', role: 'owner', joinedAt: 5 }],
+  }),
   findProductsRevision: async () => 7,
   listForUser: async () => ({
     revision: 7,
@@ -50,6 +54,15 @@ test('maps a membership without the storage-only deletedAt', async () => {
   expect(await repository.listForUser('u1')).toEqual({
     revision: 7,
     memberships: [{ product, role: 'owner', joinedAt: 5 }],
+  })
+})
+
+test('maps the product scope', async () => {
+  const repository = createProductRepository(fakeDao)
+
+  expect(await repository.findScope('p1')).toEqual({
+    product,
+    members: [{ userId: 'u1', name: 'はなこ', role: 'owner', joinedAt: 5 }],
   })
 })
 

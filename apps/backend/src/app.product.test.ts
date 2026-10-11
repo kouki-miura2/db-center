@@ -200,3 +200,42 @@ test('a malformed product ID is a 400', async () => {
 
   expect(res.status).toBe(400)
 })
+
+test('returns the product scope to members only', async () => {
+  const { body } = await createProduct('u1', 'shop')
+  const { id } = body.product
+  addMember(id, 'u2', 'member')
+
+  const scope = await (await app.request(`/api/products/${id}`, as('u2'))).json()
+
+  expect(scope).toMatchObject({
+    mode: 'full',
+    revision: 1,
+    data: {
+      product: { id, name: 'shop', target: 'postgresql18' },
+      role: 'member',
+      members: [
+        { userId: 'u1', name: 'u1', role: 'owner' },
+        { userId: 'u2', name: 'u2', role: 'member' },
+      ],
+    },
+  })
+  expect((await app.request(`/api/products/${id}`, as('u3'))).status).toBe(404)
+  expect((await app.request(`/api/products/${crypto.randomUUID()}`, as('u1'))).status).toBe(404)
+})
+
+test('answers the product scope unchanged for its current revision', async () => {
+  const { body } = await createProduct('u1', 'shop')
+
+  expect(
+    await (await app.request(`/api/products/${body.product.id}?revision=1`, as('u1'))).json(),
+  ).toEqual({ mode: 'unchanged', revision: 1 })
+})
+
+test('a deleted product is gone from its scope', async () => {
+  const { body } = await createProduct('u1', 'shop')
+  const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(body.product.id)
+  if (product) product.deletedAt = Date.now()
+
+  expect((await app.request(`/api/products/${body.product.id}`, as('u1'))).status).toBe(404)
+})

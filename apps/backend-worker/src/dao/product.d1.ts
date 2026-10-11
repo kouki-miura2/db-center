@@ -1,4 +1,5 @@
 import type {
+  MemberRecord,
   MembershipRecord,
   ProductDao,
   ProductRecord,
@@ -66,6 +67,30 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
       .bind(productId, userId)
       .first<MembershipRow>()
     return row ? toMembership(row) : null
+  },
+
+  findScope: async (productId) => {
+    // One batch is one transaction, so the members match the product's revision.
+    const [product, members] = await db.batch([
+      db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').bind(productId),
+      db
+        .prepare(
+          'SELECT product_members.user_id, users.name, product_members.role, product_members.joined_at FROM product_members JOIN users ON users.id = product_members.user_id WHERE product_members.product_id = ?',
+        )
+        .bind(productId),
+    ])
+    const row = product?.results[0] as ProductRow | undefined
+    if (!row) return null
+    type MemberRow = { user_id: string; name: string; role: Role; joined_at: number }
+    return {
+      product: toProduct(row),
+      members: ((members?.results ?? []) as MemberRow[]).map((member): MemberRecord => ({
+        userId: member.user_id,
+        name: member.name,
+        role: member.role,
+        joinedAt: member.joined_at,
+      })),
+    }
   },
 
   findProductsRevision: async (userId) =>

@@ -253,6 +253,22 @@ export const createApp = (deps: AppDependencies) => {
           )
         },
       )
+      // The product scope.
+      .get(
+        '/products/:productId',
+        validate('param', productId),
+        validate('query', revisionQuery),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.productService.getProduct({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              clientRevision: c.req.valid('query').revision,
+            }),
+          )
+        },
+      )
       .patch(
         '/products/:productId',
         validate('param', productId),

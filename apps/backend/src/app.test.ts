@@ -39,6 +39,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
     authService: fakeAuthService,
     productService: {
       listProducts: unused,
+      getProduct: unused,
       createProduct: unused,
       renameProduct: unused,
     },
