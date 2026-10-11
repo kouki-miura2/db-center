@@ -21,6 +21,7 @@ import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 import { createRevisionService } from 'backend/src/service/revision.service.ts'
+import { createScriptService } from 'backend/src/service/script.service.ts'
 import { createVersionService } from 'backend/src/service/version.service.ts'
 import pgWasm from 'libpg-query/wasm/libpg-query.wasm'
 import sqliteWasm from 'sql.js/dist/sql-wasm.wasm'
@@ -103,6 +104,7 @@ const buildApp = (env: WorkerEnv) => {
       sql,
       versions: createVersionRepository(createVersionD1Dao(env.DB)),
     }),
+    scriptService: createScriptService({ products, objects, sql }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),
     }),

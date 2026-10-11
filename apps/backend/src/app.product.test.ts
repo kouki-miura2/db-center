@@ -34,6 +34,7 @@ import { createMemberService } from './service/member.service.ts'
 import { createObjectService } from './service/object.service.ts'
 import { createProductService } from './service/product.service.ts'
 import { createRevisionService } from './service/revision.service.ts'
+import { createScriptService } from './service/script.service.ts'
 import { createVersionService } from './service/version.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
@@ -93,6 +94,15 @@ beforeEach(() => {
     objectService: createObjectService({
       products,
       objects: createObjectRepository(createObjectMemoryDao(db)),
+    }),
+    scriptService: createScriptService({
+      products,
+      objects: createObjectRepository(createObjectMemoryDao(db)),
+      sql: {
+        validateView: async () => ({ columns: [], dependencies: [] }),
+        validateExpression: async () => {},
+        validateDataType: async () => {},
+      },
     }),
     versionService: createVersionService({
       products,
@@ -1068,6 +1078,36 @@ test('object routes isolate products, lock each object and return deletion delta
   expect(
     (await (await app.request(`${path}?revision=${delta.revision}`, as('u1'))).json()).mode,
   ).toBe('unchanged')
+})
+
+test('DDL export is read-only, validates options and restricts access to frozen designs', async () => {
+  const { body } = await createProduct('u1', 'ddl-product')
+  const productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const database = (
+    await (
+      await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+    ).json()
+  ).database
+  const id = database.latestVersion.id,
+    path = `/api/versions/${id}`
+  expect((await app.request(`${path}/ddl`, as('u1', 'POST', {}))).status).toBe(409)
+  expect((await app.request(`${path}/ddl`, as('u3', 'POST', {}))).status).toBe(404)
+  const current = (await (await app.request(path, as('u1'))).json()).data.version
+  await app.request(
+    `${path}/provisional`,
+    as('u1', 'POST', { expectedUpdatedAt: current.updatedAt, expectedRevision: current.revision }),
+  )
+  const before = await (await app.request(path, as('u1'))).json()
+  expect(
+    (await app.request(`${path}/ddl`, as('u2', 'POST', { options: { unknown: true } }))).status,
+  ).toBe(400)
+  const response = await app.request(`${path}/ddl`, as('u2', 'POST', {}))
+  expect(response.status).toBe(200)
+  const exported = await response.json()
+  expect(exported.fileName).toBe('main_v1_build.sql')
+  expect(exported.sql).toContain('CREATE SCHEMA IF NOT EXISTS "public"')
+  expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
 })
 
 test('database cloning accepts only an accessible final source and preserves design keys', async () => {

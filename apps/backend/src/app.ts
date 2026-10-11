@@ -18,12 +18,14 @@ import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import { columnSchema } from './service/column.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { DatabaseService } from './service/database.service.ts'
+import { ddlOptionsSchema } from './service/ddl.ts'
 import { objectInputSchema } from './service/definition.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
 import type { ObjectService } from './service/object.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import type { RevisionService } from './service/revision.service.ts'
+import type { ScriptService } from './service/script.service.ts'
 import type { VersionService } from './service/version.service.ts'
 import { text, validate } from './validation.ts'
 
@@ -77,6 +79,7 @@ export interface AppDependencies {
   databaseService: DatabaseService
   objectService: ObjectService
   versionService: VersionService
+  scriptService: ScriptService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -741,6 +744,22 @@ export const createApp = (deps: AppDependencies) => {
             }),
           )
         },
+      )
+      .post(
+        '/versions/:versionId/ddl',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate(
+          'json',
+          z.strictObject({ options: ddlOptionsSchema.default(() => ddlOptionsSchema.parse({})) }),
+        ),
+        async (c) =>
+          c.json(
+            await deps.scriptService.ddl({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
       )
       // The audit log, newest first: `before` pages back, `after` gets what's new since.
       .get(

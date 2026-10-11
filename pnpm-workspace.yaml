@@ -19,6 +19,7 @@ catalog:
   jose: ^6.2.12
   libpg-query: 18.1.5
   sql.js: 1.14.1
+  '@electric-sql/pglite': 0.5.8
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:
