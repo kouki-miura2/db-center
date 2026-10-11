@@ -155,7 +155,7 @@ test('answers the product scope unchanged from the membership read alone', async
   expect(findScope).not.toHaveBeenCalled()
 })
 
-test('returns the whole product scope with the role and members in role order', async () => {
+test('returns the whole product scope: role, members by role and name, valid invitations', async () => {
   const service = createProductService({
     products: fakeProducts({
       findMembership: async () => membership('manager'),
@@ -168,6 +168,29 @@ test('returns the whole product scope with the role and members in role order', 
           { userId: 'u4', name: 'd', role: 'manager', joinedAt: 2 },
         ],
         connections: [],
+        invitations: [
+          {
+            id: 'i2',
+            email: 'z@example.com',
+            role: 'member',
+            expiresAt: Date.now() + 1000,
+            createdAt: 1,
+          },
+          {
+            id: 'i3',
+            email: 'old@example.com',
+            role: 'member',
+            expiresAt: Date.now() - 1,
+            createdAt: 1,
+          },
+          {
+            id: 'i1',
+            email: 'a@example.com',
+            role: 'manager',
+            expiresAt: Date.now() + 1000,
+            createdAt: 1,
+          },
+        ],
       }),
     }),
   })
@@ -177,7 +200,10 @@ test('returns the whole product scope with the role and members in role order', 
 
   expect(result).toMatchObject({ mode: 'full', revision: 4, data: { role: 'manager' } })
   if (result.mode !== 'full') throw new Error('expected full')
-  expect(result.data.members.map((m) => m.userId)).toEqual(['u1', 'u4', 'u2', 'u3'])
+  // By role, then by name (b before d), not by join date.
+  expect(result.data.members.map((m) => m.userId)).toEqual(['u1', 'u2', 'u4', 'u3'])
+  // Valid invitations only, by email.
+  expect(result.data.invitations.map((i) => i.id)).toEqual(['i1', 'i2'])
 })
 
 test('hides the product scope from a non-member', async () => {

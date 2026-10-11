@@ -8,6 +8,7 @@ import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import type { ConnectionService } from './service/connection.service.ts'
+import type { InvitationService } from './service/invitation.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import { text, validate } from './validation.ts'
 
@@ -56,6 +57,7 @@ export interface AppDependencies {
   authService: AuthService
   productService: ProductService
   connectionService: ConnectionService
+  invitationService: InvitationService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
   /**
@@ -384,6 +386,42 @@ export const createApp = (deps: AppDependencies) => {
               ...c.req.valid('param'),
               ...c.req.valid('json'),
             }),
+          )
+        },
+      )
+      // Invitations: one passcode for everyone invited together, shown to the inviter only.
+      .post(
+        '/products/:productId/invitations',
+        validate('param', productId),
+        validate(
+          'json',
+          z.strictObject({
+            invitees: z
+              .array(
+                z.strictObject({ email: z.email().max(254), role: z.enum(['manager', 'member']) }),
+              )
+              .min(1)
+              .max(LIMITS.membersPerProduct),
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.invitationService.invite({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              invitees: c.req.valid('json').invitees,
+            }),
+          )
+        },
+      )
+      .post(
+        '/products/:productId/invitations/:invitationId/passcode',
+        validate('param', z.object({ productId: z.uuid(), invitationId: z.uuid() })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.invitationService.showPasscode({ userId: user.id, ...c.req.valid('param') }),
           )
         },
       )

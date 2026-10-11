@@ -2,6 +2,7 @@ import type { Target } from 'utils'
 
 import type { AuditLogRecord } from './audit-log.interface.ts'
 import type { ConnectionRecord } from './connection.interface.ts'
+import type { InvitationRecord } from './invitation.interface.ts'
 
 export type Role = 'owner' | 'manager' | 'member'
 
@@ -35,6 +36,8 @@ export interface ProductScopeRecord {
   product: ProductRecord
   members: MemberRecord[]
   connections: ConnectionRecord[]
+  /** Every invitation row, expired ones included until they're cleaned up. */
+  invitations: InvitationRecord[]
 }
 
 export interface ProductDao {

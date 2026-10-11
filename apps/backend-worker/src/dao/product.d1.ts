@@ -15,6 +15,7 @@ import {
   staleGuard,
 } from './batch.ts'
 import { toConnectionRecord, type ConnectionRow } from './connection.d1.ts'
+import { toInvitationRecord, type InvitationRow } from './invitation.d1.ts'
 
 interface ProductRow {
   id: string
@@ -97,7 +98,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
 
   findScope: async (productId) => {
     // One batch is one transaction, so the members match the product's revision.
-    const [product, members, connections] = await db.batch([
+    const [product, members, connections, invitations] = await db.batch([
       db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').bind(productId),
       db
         .prepare(
@@ -105,6 +106,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
         )
         .bind(productId),
       db.prepare('SELECT * FROM connections WHERE product_id = ?').bind(productId),
+      db.prepare('SELECT * FROM invitations WHERE product_id = ?').bind(productId),
     ])
     const row = product?.results[0] as ProductRow | undefined
     if (!row) return null
@@ -118,6 +120,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
         joinedAt: member.joined_at,
       })),
       connections: ((connections?.results ?? []) as ConnectionRow[]).map(toConnectionRecord),
+      invitations: ((invitations?.results ?? []) as InvitationRow[]).map(toInvitationRecord),
     }
   },
 

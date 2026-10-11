@@ -50,6 +50,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       deleteConnection: unused,
       reorderConnections: unused,
     },
+    invitationService: { invite: unused, showPasscode: unused },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.development,
     devLogin: false,

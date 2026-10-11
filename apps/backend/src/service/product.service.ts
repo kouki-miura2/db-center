@@ -3,6 +3,7 @@ import { LIMITS, type Target } from 'utils'
 import type { AuditLogRecord } from '../dao/audit-log.interface.ts'
 import type { Role } from '../dao/product.interface.ts'
 import { AppError } from '../error.ts'
+import type { PendingInvitation } from '../repository/invitation.repository.ts'
 import type {
   Member,
   Membership,
@@ -49,6 +50,8 @@ export interface ProductScopeView {
   members: MemberView[]
   /** In their display order; passwords are never included. */
   connections: ConnectionView[]
+  /** Pending members (仮登録) whose invitation is still valid, by email. */
+  invitations: PendingInvitation[]
 }
 
 /** A cacheable scope: unchanged when the client's revision is current, otherwise all of it. */
@@ -106,9 +109,11 @@ const toView = ({ id, name, target, createdAt, updatedAt }: Product): ProductVie
 
 const ROLE_ORDER: Record<Role, number> = { owner: 0, manager: 1, member: 2 }
 
-// Owner first, then managers, then members, each by when they joined.
-const byRoleThenJoined = (a: Member, b: Member) =>
-  ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.joinedAt - b.joinedAt
+// Owner first, then managers, then members, each by name ("各論 > プロダクト管理 > 一覧").
+const byRoleThenName = (a: Member, b: Member) =>
+  ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
+  a.name.localeCompare(b.name, 'ja') ||
+  a.userId.localeCompare(b.userId)
 
 const auditEntry = (entry: Omit<AuditLogRecord, 'id' | 'targetType'>): AuditLogRecord => ({
   id: crypto.randomUUID(),
@@ -181,10 +186,13 @@ export const createProductService = (deps: { products: ProductRepository }): Pro
       data: {
         product: toView(scope.product),
         role,
-        members: scope.members.toSorted(byRoleThenJoined).map((member) => ({ ...member })),
+        members: scope.members.toSorted(byRoleThenName).map((member) => ({ ...member })),
         connections: scope.connections
           .toSorted((a, b) => a.sortOrder - b.sortOrder)
           .map(toConnectionView),
+        invitations: scope.invitations
+          .filter((invitation) => invitation.expiresAt > Date.now())
+          .toSorted((a, b) => a.email.localeCompare(b.email)),
       },
     }
   },

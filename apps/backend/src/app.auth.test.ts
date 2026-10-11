@@ -40,6 +40,7 @@ beforeEach(() => {
       products: createProductRepository(createProductMemoryDao(db)),
     }),
     connectionService: {} as AppDependencies['connectionService'],
+    invitationService: {} as AppDependencies['invitationService'],
     // As in production: every path needs a session except the public ones.
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: SESSION_COOKIE.production.name }),

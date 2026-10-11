@@ -33,6 +33,7 @@ const fakeDao: ProductDao = {
         updatedAt: 1,
       },
     ],
+    invitations: [],
   }),
   findProductsRevision: async () => 7,
   listForUser: async () => ({

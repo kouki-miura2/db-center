@@ -1,5 +1,6 @@
 import { AppError } from '../error.ts'
 import type { ConnectionRecord } from './connection.interface.ts'
+import type { InvitationRecord } from './invitation.interface.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import type {
   MemberRecord,
@@ -101,7 +102,10 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
     const connections = [...memoryTable<ConnectionRecord>(db, 'connections').values()]
       .filter((row) => row.productId === productId)
       .map((row) => ({ ...row }))
-    return { product: { ...product }, members: list, connections }
+    const invitations = [...memoryTable<InvitationRecord>(db, 'invitations').values()]
+      .filter((row) => row.productId === productId)
+      .map((row) => ({ ...row }))
+    return { product: { ...product }, members: list, connections, invitations }
   },
 
   findProductsRevision: async (userId) => users(db).get(userId)?.productsRevision ?? null,

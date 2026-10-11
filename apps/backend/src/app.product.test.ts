@@ -3,15 +3,18 @@ import { beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { createApp, SESSION_COOKIE } from './app.ts'
 import { createConnectionMemoryDao } from './dao/connection.memory.ts'
+import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
+import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
+import { createInvitationService } from './service/invitation.service.ts'
 import { createProductService } from './service/product.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
@@ -46,13 +49,19 @@ beforeEach(() => {
     })
   }
   const products = createProductRepository(createProductMemoryDao(db))
+  const secrets = createAesGcmSecretBox(btoa('k'.repeat(32)))
   app = createApp({
     authService: {} as AuthService,
     productService: createProductService({ products }),
     connectionService: createConnectionService({
       products,
       connections: createConnectionRepository(createConnectionMemoryDao(db)),
-      secrets: createAesGcmSecretBox(btoa('k'.repeat(32))),
+      secrets,
+    }),
+    invitationService: createInvitationService({
+      products,
+      invitations: createInvitationRepository(createInvitationMemoryDao(db)),
+      secrets,
     }),
     auth: { guard: headerGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.production,
@@ -375,5 +384,61 @@ describe('connections', () => {
     expect(await res.json()).toMatchObject({
       error: { fields: { connectionString: expect.any(String) } },
     })
+  })
+})
+
+describe('invitations', () => {
+  const invite = (id: string, userId: string, invitees: { email: string; role: string }[]) =>
+    app.request(`/api/products/${id}/invitations`, as(userId, 'POST', { invitees }))
+
+  test('invites people with one passcode; the scope lists them without it', async () => {
+    const { body } = await createProduct('u1', 'shop')
+    const id = body.product.id
+
+    const res = await invite(id, 'u1', [
+      { email: 'Hanako@Example.com', role: 'manager' },
+      { email: 'taro@example.com', role: 'member' },
+    ])
+
+    const result = await res.json()
+    expect(result.passcode).toMatch(/^[A-Z0-9]{8}$/)
+    expect(result.revisions).toEqual({ product: 2 })
+    const scope = await (await app.request(`/api/products/${id}`, as('u1'))).json()
+    expect(scope.data.invitations.map((i: { email: string }) => i.email)).toEqual([
+      'hanako@example.com',
+      'taro@example.com',
+    ])
+    expect(JSON.stringify(scope)).not.toContain(result.passcode)
+
+    const shown = await app.request(
+      `/api/products/${id}/invitations/${scope.data.invitations[1].id}/passcode`,
+      as('u1', 'POST'),
+    )
+    expect(await shown.json()).toEqual({ passcode: result.passcode, expiresAt: result.expiresAt })
+  })
+
+  test('a manager invites members only; a member cannot invite', async () => {
+    const { body } = await createProduct('u1', 'shop')
+    const id = body.product.id
+    addMember(id, 'u2', 'manager')
+    addMember(id, 'u3', 'member')
+
+    expect((await invite(id, 'u2', [{ email: 'a@example.com', role: 'manager' }])).status).toBe(403)
+    expect((await invite(id, 'u2', [{ email: 'a@example.com', role: 'member' }])).status).toBe(200)
+    expect((await invite(id, 'u3', [{ email: 'b@example.com', role: 'member' }])).status).toBe(403)
+  })
+
+  test('refuses to invite a member, and beyond the member limit', async () => {
+    const { body } = await createProduct('u1', 'shop')
+    const id = body.product.id
+
+    expect((await invite(id, 'u1', [{ email: 'u1@example.com', role: 'member' }])).status).toBe(409)
+    const many = Array.from({ length: LIMITS.membersPerProduct }, (_, i) => ({
+      email: `p${i}@example.com`,
+      role: 'member',
+    }))
+    const res = await invite(id, 'u1', many)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('limit_exceeded')
   })
 })
