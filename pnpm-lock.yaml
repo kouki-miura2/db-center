@@ -164,6 +164,9 @@ settings:
 
 catalogs:
   default:
+    '@hono/zod-validator':
+      specifier: ^0.9.1
+      version: 0.9.1
     '@mdi/font':
       specifier: ^7.4.47
       version: 7.4.47
@@ -188,6 +191,9 @@ catalogs:
     workbox-window:
       specifier: ^7.4.1
       version: 7.4.1
+    zod:
+      specifier: ^4.6.5
+      version: 4.6.5
 
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@1.1.0
@@ -205,12 +211,18 @@ importers:
 
   apps/backend:
     dependencies:
+      '@hono/zod-validator':
+        specifier: 'catalog:'
+        version: 0.9.1(hono@4.13.13)(zod@4.6.5)
       hono:
         specifier: ^4.13.7
         version: 4.13.13
       utils:
         specifier: workspace:*
         version: link:../../packages/utils
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -1019,6 +1031,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@hono/zod-validator@0.9.1':
+    resolution: {integrity: sha512-iiv6w0qrIc0arfvCtUqBWsvl4fXjzaTcQcCJTTtCnkawF9HHGE+KjEl0ox3gQJ6rKZEgE3mLExlQCF72M+mNuw==}
+    peerDependencies:
+      hono: '>=4.11.2'
+      zod: ^3.25.0 || ^4.0.0
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -3767,6 +3785,9 @@ packages:
   yuku-parser@0.9.5:
     resolution: {integrity: sha512-IBnAdNVMswWbJcM7woPluOudectJzFjJ1N8jVRxP9Uq4CIv5hZdBIcdmtRbFDYF/Ph2j2gVup4YJ4N9mh0jYFA==}
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
 snapshots:
 
   '@apideck/better-ajv-errors@0.3.7(ajv@8.20.0)':
@@ -4549,6 +4570,11 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@hono/zod-validator@0.9.1(hono@4.13.13)(zod@4.6.5)':
+    dependencies:
+      hono: 4.13.13
+      zod: 4.6.5
 
   '@img/colour@1.1.0': {}
 
@@ -7375,3 +7401,5 @@ snapshots:
       '@yuku-parser/binding-linux-x64-musl': 0.9.5
       '@yuku-parser/binding-win32-arm64': 0.9.5
       '@yuku-parser/binding-win32-x64': 0.9.5
+
+  zod@4.6.5: {}

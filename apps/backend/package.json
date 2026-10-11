@@ -8,8 +8,10 @@
     "test": "vp test"
   },
   "dependencies": {
+    "@hono/zod-validator": "catalog:",
     "hono": "^4.13.7",
-    "utils": "workspace:*"
+    "utils": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
