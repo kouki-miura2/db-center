@@ -3,16 +3,19 @@ import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.sessio
 import { createConnectionRepository } from 'backend/src/repository/connection.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createInvitationRepository } from 'backend/src/repository/invitation.repository.ts'
+import { createMemberRepository } from 'backend/src/repository/member.repository.ts'
 import { createProductRepository } from 'backend/src/repository/product.repository.ts'
 import { createAesGcmSecretBox } from 'backend/src/repository/secret-box.aes-gcm.ts'
 import { createUserRepository } from 'backend/src/repository/user.repository.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
+import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 
 import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
+import { createMemberD1Dao } from './dao/member.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
 
@@ -52,6 +55,10 @@ const buildApp = (env: WorkerEnv) => {
       products,
       invitations: createInvitationRepository(createInvitationD1Dao(env.DB)),
       secrets,
+    }),
+    memberService: createMemberService({
+      products,
+      members: createMemberRepository(createMemberD1Dao(env.DB)),
     }),
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: sessionCookie.name }),

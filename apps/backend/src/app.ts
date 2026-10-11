@@ -9,6 +9,7 @@ import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.inter
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
+import type { MemberService } from './service/member.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import { text, validate } from './validation.ts'
 
@@ -58,6 +59,7 @@ export interface AppDependencies {
   productService: ProductService
   connectionService: ConnectionService
   invitationService: InvitationService
+  memberService: MemberService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
   /**
@@ -77,6 +79,7 @@ const target = z.enum(Object.keys(TARGETS) as [Target, ...Target[]])
 /** The `updatedAt` the client last read: the write is refused if the data changed since. */
 const expectedUpdatedAt = z.number().int().nonnegative()
 const connectionParams = z.object({ productId: z.uuid(), connectionId: z.uuid() })
+const memberParams = z.object({ productId: z.uuid(), userId: z.uuid() })
 const connectionFields = {
   name: text(LIMITS.connectionNameMaxLength).min(1),
   connectionString: text(LIMITS.connectionStringMaxLength).min(1),
@@ -425,6 +428,59 @@ export const createApp = (deps: AppDependencies) => {
           )
         },
       )
+      // Members: role changes, removal, ownership transfer and leaving.
+      .patch(
+        '/products/:productId/members/:userId',
+        validate('param', memberParams),
+        validate('json', z.strictObject({ role: z.enum(['manager', 'member']) })),
+        async (c) => {
+          const user = requireUser(c)
+          const { productId, userId: targetUserId } = c.req.valid('param')
+          return c.json(
+            await deps.memberService.changeRole({
+              userId: user.id,
+              productId,
+              targetUserId,
+              role: c.req.valid('json').role,
+            }),
+          )
+        },
+      )
+      .delete(
+        '/products/:productId/members/:userId',
+        validate('param', memberParams),
+        async (c) => {
+          const user = requireUser(c)
+          const { productId, userId: targetUserId } = c.req.valid('param')
+          return c.json(
+            await deps.memberService.removeMember({ userId: user.id, productId, targetUserId }),
+          )
+        },
+      )
+      .post(
+        '/products/:productId/transfer-owner',
+        validate('param', productId),
+        validate('json', z.strictObject({ userId: z.uuid() })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.memberService.transferOwnership({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              targetUserId: c.req.valid('json').userId,
+            }),
+          )
+        },
+      )
+      .post('/products/:productId/leave', validate('param', productId), async (c) => {
+        const user = requireUser(c)
+        return c.json(
+          await deps.memberService.leave({
+            userId: user.id,
+            productId: c.req.valid('param').productId,
+          }),
+        )
+      })
       // Joining with a passcode, as the signed-in user's own email.
       .post(
         '/invitations/join',

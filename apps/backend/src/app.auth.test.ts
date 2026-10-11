@@ -41,6 +41,7 @@ beforeEach(() => {
     }),
     connectionService: {} as AppDependencies['connectionService'],
     invitationService: {} as AppDependencies['invitationService'],
+    memberService: {} as AppDependencies['memberService'],
     // As in production: every path needs a session except the public ones.
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: SESSION_COOKIE.production.name }),

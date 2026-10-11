@@ -4,17 +4,20 @@ import { beforeEach, describe, expect, test } from 'vite-plus/test'
 import { createApp, SESSION_COOKIE } from './app.ts'
 import { createConnectionMemoryDao } from './dao/connection.memory.ts'
 import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
+import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
+import { createMemberRepository } from './repository/member.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
+import { createMemberService } from './service/member.service.ts'
 import { createProductService } from './service/product.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
@@ -62,6 +65,10 @@ beforeEach(() => {
       products,
       invitations: createInvitationRepository(createInvitationMemoryDao(db)),
       secrets,
+    }),
+    memberService: createMemberService({
+      products,
+      members: createMemberRepository(createMemberMemoryDao(db)),
     }),
     auth: { guard: headerGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.production,
@@ -489,5 +496,82 @@ describe('joining', () => {
     const res = await join('u2', passcode)
 
     expect(res.status).toBe(429)
+  })
+})
+
+describe('members', () => {
+  // Users get UUIDs here, since member routes take user IDs.
+  const ids = {
+    owner: crypto.randomUUID(),
+    manager: crypto.randomUUID(),
+    member: crypto.randomUUID(),
+  }
+  const arrange = async () => {
+    for (const [name, id] of Object.entries(ids)) {
+      memoryTable<UserRecord>(db, 'users').set(id, {
+        id,
+        googleSub: `sub-${id}`,
+        email: `${name}@example.com`,
+        name,
+        termsVersion: TERMS_VERSION,
+        agreedAt: 0,
+        lastLoginAt: 0,
+        productsRevision: 1,
+        createdAt: 0,
+        deletedAt: null,
+      })
+    }
+    const { body } = await createProduct(ids.owner, 'shop')
+    const productId = body.product.id as string
+    addMember(productId, ids.manager, 'manager')
+    addMember(productId, ids.member, 'member')
+    return productId
+  }
+  const roleIn = async (productId: string, userId: string) =>
+    (
+      await (await app.request(`/api/products/${productId}`, as(ids.owner))).json()
+    ).data.members.find((m: { userId: string }) => m.userId === userId)?.role ?? null
+
+  test('a manager promotes a member, but only the owner demotes a manager', async () => {
+    const productId = await arrange()
+    const setRole = (userId: string, target: string, role: string) =>
+      app.request(`/api/products/${productId}/members/${target}`, as(userId, 'PATCH', { role }))
+
+    expect((await setRole(ids.manager, ids.member, 'manager')).status).toBe(200)
+    expect(await roleIn(productId, ids.member)).toBe('manager')
+    expect((await setRole(ids.manager, ids.member, 'member')).status).toBe(403)
+    expect((await setRole(ids.owner, ids.member, 'member')).status).toBe(200)
+  })
+
+  test('the owner transfers ownership and becomes a manager', async () => {
+    const productId = await arrange()
+
+    const res = await app.request(
+      `/api/products/${productId}/transfer-owner`,
+      as(ids.owner, 'POST', { userId: ids.member }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(await roleIn(productId, ids.member)).toBe('owner')
+    expect(await roleIn(productId, ids.owner)).toBe('manager')
+  })
+
+  test('removing and leaving take the product off the user’s list', async () => {
+    const productId = await arrange()
+
+    const removed = await app.request(
+      `/api/products/${productId}/members/${ids.member}`,
+      as(ids.manager, 'DELETE'),
+    )
+    expect(removed.status).toBe(200)
+    expect((await (await app.request('/api/products', as(ids.member))).json()).data).toEqual([])
+
+    expect(
+      (await app.request(`/api/products/${productId}/leave`, as(ids.manager, 'POST'))).status,
+    ).toBe(200)
+    expect((await app.request(`/api/products/${productId}`, as(ids.manager))).status).toBe(404)
+    expect(
+      (await app.request(`/api/products/${productId}/leave`, as(ids.owner, 'POST'))).status,
+    ).toBe(409)
   })
 })
