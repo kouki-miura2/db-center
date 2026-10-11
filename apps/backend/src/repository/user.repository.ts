@@ -21,6 +21,7 @@ export interface UserRepository {
     termsVersion: string
     agreedAt: number
   }) => Promise<User>
+  withdraw: UserDao['withdraw']
 }
 
 const toUser = (record: UserRecord): User | null =>
@@ -40,4 +41,5 @@ export const createUserRepository = (dao: UserDao): UserRepository => ({
   recordLogin: async (login, session) => toUser(await dao.recordLogin(login, session)) as User,
   deleteSession: (sessionId) => dao.deleteSession(sessionId),
   recordConsent: async (consent) => toUser(await dao.recordConsent(consent)) as User,
+  withdraw: (input) => dao.withdraw(input),
 })

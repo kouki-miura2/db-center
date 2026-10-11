@@ -26,6 +26,7 @@ const fakeAuthService: AuthService = {
   register: unused,
   signOut: async () => {},
   consent: unused,
+  withdraw: unused,
   devSignIn: async ({ email, name }) => ({
     status: 'signed_in',
     user: { id: 'dev-user', name, email },

@@ -1,6 +1,6 @@
 import type { SessionRecord, UserDao, UserRecord } from 'backend/src/dao/user.interface.ts'
 
-import { runBatch, staleGuard } from './batch.ts'
+import { guard, runBatch, staleGuard } from './batch.ts'
 
 interface UserRow {
   id: string
@@ -98,5 +98,32 @@ export const createUserD1Dao = (db: D1Database): UserDao => ({
       staleGuard(db),
     ])
     return toRecord(updated?.results[0] as UserRow)
+  },
+
+  withdraw: async ({ userId, name, anonymizedName, now }) => {
+    const left = "SELECT product_id FROM product_members WHERE user_id = ? AND role <> 'owner'"
+    await runBatch(db, [
+      guard(
+        db,
+        'stale_update',
+        "EXISTS (SELECT 1 FROM product_members m JOIN products p ON p.id = m.product_id WHERE m.user_id = ? AND m.role = 'owner' AND p.deleted_at IS NULL)",
+        userId,
+      ),
+      // Leave every product they're a manager or member of, logging it in each.
+      db
+        .prepare(
+          `INSERT INTO audit_logs (id, product_id, user_id, target_type, action, summary, created_at) SELECT lower(hex(randomblob(16))), product_id, ?, 'member', 'leave', ?, ? FROM (${left})`,
+        )
+        .bind(userId, name, now, userId),
+      db.prepare(`UPDATE products SET revision = revision + 1 WHERE id IN (${left})`).bind(userId),
+      db.prepare("DELETE FROM product_members WHERE user_id = ? AND role <> 'owner'").bind(userId),
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+      db
+        .prepare(
+          'UPDATE users SET google_sub = NULL, email = NULL, name = ?, deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+        )
+        .bind(anonymizedName, now, userId),
+      staleGuard(db),
+    ])
   },
 })

@@ -316,3 +316,38 @@ test('a user on an older terms version can still log out', async () => {
 
   expect((await logout(token)).status).toBe(204)
 })
+
+test('withdrawing ends every session; the same Google account then registers anew', async () => {
+  const first = sessionToken(await register())
+  const second = sessionToken(await post('/api/auth/google', { idToken: await idToken() }))
+
+  const res = await app.request('/api/auth/me', withSession(first as string, { method: 'DELETE' }))
+
+  expect(res.status).toBe(204)
+  expect(res.headers.get('set-cookie')).toMatch(/__Host-session=;.*Max-Age=0/)
+  expect((await me(first)).status).toBe(401)
+  expect((await me(second)).status).toBe(401)
+  const [withdrawn] = [...memoryTable<{ name: string; email: string | null }>(db, 'users').values()]
+  expect(withdrawn).toMatchObject({ name: '退会したユーザー', email: null })
+  expect(await (await post('/api/auth/google', { idToken: await idToken() })).json()).toMatchObject(
+    {
+      status: 'registration_required',
+    },
+  )
+})
+
+test('an owner of a product can’t withdraw', async () => {
+  const token = sessionToken(await register()) as string
+  await app.request(
+    '/api/products',
+    withSession(token, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'shop', target: 'sqlite3' }),
+    }),
+  )
+
+  const res = await app.request('/api/auth/me', withSession(token, { method: 'DELETE' }))
+
+  expect(res.status).toBe(409)
+  expect((await me(token)).status).toBe(200)
+})

@@ -1,5 +1,7 @@
 import { AppError } from '../error.ts'
-import { atomic, type MemoryDb, memoryTable } from './memory-db.ts'
+import { appendAuditLog, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
+import type { ProductRecord } from './product.interface.ts'
+import type { MemberRow } from './product.memory.ts'
 import type { SessionRecord, UserDao, UserRecord } from './user.interface.ts'
 
 const users = (db: MemoryDb) => memoryTable<UserRecord>(db, 'users')
@@ -44,5 +46,41 @@ export const createUserMemoryDao = (db: MemoryDb): UserDao => ({
       user.termsVersion = termsVersion
       user.agreedAt = agreedAt
       return { ...user }
+    }),
+
+  withdraw: async ({ userId, name, anonymizedName, now }) =>
+    atomic(db, () => {
+      const user = users(db).get(userId)
+      if (!user || user.deletedAt !== null) throw new AppError('stale_update')
+      const members = memoryTable<MemberRow>(db, 'product_members')
+      const products = memoryTable<ProductRecord>(db, 'products')
+      const mine = [...members.entries()].filter(([, row]) => row.userId === userId)
+      const ownsActive = mine.some(
+        ([, row]) => row.role === 'owner' && products.get(row.productId)?.deletedAt === null,
+      )
+      if (ownsActive) throw new AppError('stale_update')
+      for (const [key, row] of mine) {
+        // Owner rows remain only for deleted products, until those are purged.
+        if (row.role === 'owner') continue
+        const product = products.get(row.productId)
+        if (product) product.revision += 1
+        members.delete(key)
+        appendAuditLog(db, {
+          id: crypto.randomUUID(),
+          productId: row.productId,
+          userId,
+          targetType: 'member',
+          action: 'leave',
+          summary: name,
+          createdAt: now,
+        })
+      }
+      sessions(db).forEach((session, id) => {
+        if (session.userId === userId) sessions(db).delete(id)
+      })
+      user.googleSub = null
+      user.email = null
+      user.name = anonymizedName
+      user.deletedAt = now
     }),
 })

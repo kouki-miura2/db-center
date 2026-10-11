@@ -56,9 +56,17 @@ export interface AuthService {
    * current terms) on first use. Only reachable when the runtime package enables it.
    */
   devSignIn: (input: { email: string; name: string }) => Promise<RegisterResult>
+  /**
+   * Withdrawal: refused while the user owns a product that isn't deleted; otherwise they leave
+   * every product, all their sessions end and their Google account is forgotten.
+   */
+  withdraw: (input: { userId: string; name: string }) => Promise<void>
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** How a withdrawn user is shown wherever their name used to be. */
+export const WITHDRAWN_USER_NAME = '退会したユーザー'
 
 const newSession = async (userId: string, now: number) => {
   const token = createSessionToken()
@@ -168,6 +176,20 @@ export const createAuthService = (deps: {
     assertCurrentTerms(termsVersion)
     const user = await deps.users.recordConsent({ userId, termsVersion, agreedAt: Date.now() })
     return { user: toView(user), consentRequired: false }
+  },
+
+  withdraw: async ({ userId, name }) => {
+    await deps.users
+      .withdraw({ userId, name, anonymizedName: WITHDRAWN_USER_NAME, now: Date.now() })
+      .catch((error: unknown) => {
+        if (error instanceof AppError && error.code === 'stale_update') {
+          throw new AppError('invalid_state', {
+            message:
+              'オーナーのプロダクトがあるため退会できません。先にプロダクトを削除してください',
+          })
+        }
+        throw error
+      })
   },
 
   devSignIn: async ({ email, name }) => {

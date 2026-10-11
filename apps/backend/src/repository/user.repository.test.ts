@@ -25,6 +25,7 @@ const fakeDao = (found: UserRecord | null): UserDao => ({
   findSessionUser: async () => found,
   deleteSession: async () => {},
   recordConsent: async (consent) => record({ termsVersion: consent.termsVersion }),
+  withdraw: async () => {},
 })
 
 test('maps a stored user to the domain user', async () => {

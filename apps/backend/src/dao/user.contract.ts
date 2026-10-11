@@ -6,9 +6,19 @@ import type { SessionRecord, UserDao, UserRecord } from './user.interface.ts'
  * Behavior every `UserDao` must share, run against the in-memory DAO here and the D1 DAO in the
  * runtime package. `setup` returns a fresh, empty DAO plus a way to count stored sessions.
  */
-export const userDaoContract = (
-  setup: () => Promise<{ dao: UserDao; countSessions: () => Promise<number> }>,
-) => {
+export interface UserDaoFixture {
+  dao: UserDao
+  countSessions: () => Promise<number>
+  /** Adds a product (revision 1) and its owner's membership directly. */
+  addProduct: (productId: string, ownerId: string, deleted?: boolean) => Promise<void>
+  addMember: (productId: string, userId: string, role: 'manager' | 'member') => Promise<void>
+  countMemberships: (userId: string) => Promise<number>
+  productRevision: (productId: string) => Promise<number>
+  /** The audit log entries as [productId, action, summary]. */
+  auditLogs: () => Promise<[string, string, string][]>
+}
+
+export const userDaoContract = (setup: () => Promise<UserDaoFixture>) => {
   const user = (overrides: Partial<UserRecord> = {}): UserRecord => ({
     id: 'u1',
     googleSub: 'sub-1',
@@ -116,5 +126,44 @@ export const userDaoContract = (
       ),
     ).rejects.toMatchObject({ code: 'stale_update' })
     expect(await countSessions()).toBe(0)
+  })
+
+  const withdraw = (dao: UserDao) =>
+    dao.withdraw({ userId: 'u1', name: 'はなこ', anonymizedName: '退会したユーザー', now: 5000 })
+
+  test('withdraws: leaves products, deletes sessions, forgets the Google account', async () => {
+    const f = await setup()
+    await f.dao.register(user(), session('s1'))
+    await f.dao.recordLogin(
+      { userId: 'u1', email: 'a@example.com', lastLoginAt: 2000 },
+      session('s2'),
+    )
+    await f.dao.register(user({ id: 'u2', googleSub: 'sub-2' }), session('s3', 'u2'))
+    await f.addProduct('p1', 'u2')
+    await f.addMember('p1', 'u1', 'manager')
+    await f.addProduct('p2', 'u1', true)
+
+    await withdraw(f.dao)
+
+    expect(await f.dao.findByGoogleSub('sub-1')).toBeNull()
+    expect(await f.dao.findSessionUser('s1', 1000)).toBeNull()
+    expect(await f.countSessions()).toBe(1)
+    // The deleted product's owner row stays until it's purged.
+    expect(await f.countMemberships('u1')).toBe(1)
+    expect(await f.productRevision('p1')).toBe(2)
+    expect(await f.auditLogs()).toEqual([['p1', 'leave', 'はなこ']])
+    // A new registration with the same Google account is a new user.
+    await f.dao.register(user({ id: 'u3' }), session('s4', 'u3'))
+    expect((await f.dao.findByGoogleSub('sub-1'))?.id).toBe('u3')
+  })
+
+  test('refuses to withdraw the owner of a product that isn’t deleted, changing nothing', async () => {
+    const f = await setup()
+    await f.dao.register(user(), session('s1'))
+    await f.addProduct('p1', 'u1')
+
+    await expect(withdraw(f.dao)).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await f.dao.findByGoogleSub('sub-1')).not.toBeNull()
+    expect(await f.countSessions()).toBe(1)
   })
 }

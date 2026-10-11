@@ -46,4 +46,16 @@ export interface UserDao {
     termsVersion: string
     agreedAt: number
   }) => Promise<UserRecord>
+  /**
+   * Withdraws the user ("各論 > Googleでログイン > 退会"): leaves every product they're a manager or
+   * member of (bumping its revision, with a `leave` audit log entry summarized as `name`), deletes
+   * all their sessions, clears the Google account ID and email and renames them `anonymizedName`.
+   * Throws `stale_update` if they own a product that isn't deleted, or are already withdrawn.
+   */
+  withdraw: (input: {
+    userId: string
+    name: string
+    anonymizedName: string
+    now: number
+  }) => Promise<void>
 }

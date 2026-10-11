@@ -30,6 +30,7 @@ const fakeUsers = (found: User | null, overrides: Partial<UserRepository> = {}) 
     sessions: [] as SessionRecord[],
     deleted: [] as string[],
     consents: [] as { userId: string; termsVersion: string; agreedAt: number }[],
+    withdrawn: [] as unknown[],
   }
   const users: UserRepository = {
     findByGoogleSub: async () => found,
@@ -49,6 +50,9 @@ const fakeUsers = (found: User | null, overrides: Partial<UserRepository> = {}) 
     },
     deleteSession: async (sessionId) => {
       calls.deleted.push(sessionId)
+    },
+    withdraw: async (input) => {
+      calls.withdrawn.push(input)
     },
     recordConsent: async (consent) => {
       calls.consents.push(consent)
@@ -214,4 +218,30 @@ test('development login signs an existing development user in again', async () =
 
   expect(calls.registered).toEqual([])
   expect(calls.sessions).toHaveLength(1)
+})
+
+test('withdraws as 退会したユーザー', async () => {
+  vi.useFakeTimers({ now: 7000 })
+  const { users, calls } = fakeUsers(existing)
+
+  await createAuthService({ verifier: verifier(), users }).withdraw({
+    userId: 'u1',
+    name: 'はなこ',
+  })
+
+  expect(calls.withdrawn).toEqual([
+    { userId: 'u1', name: 'はなこ', anonymizedName: '退会したユーザー', now: 7000 },
+  ])
+})
+
+test('explains that an owner must delete their products before withdrawing', async () => {
+  const { users } = fakeUsers(existing, {
+    withdraw: async () => {
+      throw new AppError('stale_update')
+    },
+  })
+
+  await expect(
+    createAuthService({ verifier: verifier(), users }).withdraw({ userId: 'u1', name: 'はなこ' }),
+  ).rejects.toMatchObject({ code: 'invalid_state' })
 })

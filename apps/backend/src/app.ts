@@ -243,6 +243,13 @@ export const createApp = (deps: AppDependencies) => {
           return c.json(await deps.authService.consent({ userId: user.id, termsVersion }))
         },
       )
+      // Withdrawal (allowed before agreeing to new terms too): ends every session of the user.
+      .delete('/auth/me', async (c) => {
+        const user = requireUser(c)
+        await deps.authService.withdraw({ userId: user.id, name: user.name })
+        deleteCookie(c, deps.sessionCookie.name, { path: '/', secure: deps.sessionCookie.secure })
+        return c.body(null, 204)
+      })
       // Ends this browser's session and clears the cookie, even if the session already expired.
       .post('/auth/logout', async (c) => {
         const token = getCookie(c, deps.sessionCookie.name)
