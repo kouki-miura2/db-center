@@ -13,6 +13,7 @@ import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product
 import { createRevisionMemoryDao } from './dao/revision.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
 import { createVersionMemoryDao } from './dao/version.memory.ts'
+import { AppError } from './error.ts'
 import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
@@ -30,6 +31,7 @@ import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
 import { createDefinitionExportService } from './service/definition-export.service.ts'
 import type { TableDefinition } from './service/definition.ts'
+import { createInspectionService } from './service/inspection.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
 import { createObjectService } from './service/object.service.ts'
@@ -72,6 +74,16 @@ beforeEach(() => {
   const products = createProductRepository(createProductMemoryDao(db))
   const secrets = createAesGcmSecretBox(btoa('k'.repeat(32)))
   app = createApp({
+    inspectionService: createInspectionService({
+      products,
+      connections: createConnectionRepository(createConnectionMemoryDao(db)),
+      secrets,
+      postgres: {
+        open: async () => {
+          throw new AppError('connection_failed')
+        },
+      },
+    }),
     authService: {} as AuthService,
     productService: createProductService({ products }),
     connectionService: createConnectionService({
@@ -1136,6 +1148,35 @@ test.each(['postgresql18', 'sqlite3'] as const)(
     expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
   },
 )
+
+test('connection inspection hides credentials, enforces owner/manager access and leaves revisions unchanged', async () => {
+  const { body } = await createProduct('u1', 'inspection-product'),
+    productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const created = await (
+    await app.request(
+      `/api/products/${productId}/connections`,
+      as('u1', 'POST', {
+        name: 'staging',
+        connectionString: 'postgres://user@db.example.com/main',
+        password: 'test-password',
+      }),
+    )
+  ).json()
+  const route = `/api/connections/${created.connection.id}/inspect`
+  const before = await (await app.request(`/api/products/${productId}`, as('u1'))).json()
+  expect((await app.request(route, as('u3', 'POST', {}))).status).toBe(404)
+  expect((await app.request(route, as('u2', 'POST', {}))).status).toBe(403)
+  expect((await app.request(route, as('u1', 'POST', { password: 'override' }))).status).toBe(400)
+  const response = await app.request(route, as('u1', 'POST', {}))
+  expect(response.status).toBe(502)
+  const result = await response.text()
+  expect(result).not.toContain('test-password')
+  expect(result).not.toContain('passwordEncrypted')
+  expect((await (await app.request(`/api/products/${productId}`, as('u1'))).json()).revision).toBe(
+    before.revision,
+  )
+})
 
 test('database cloning accepts only an accessible final source and preserves design keys', async () => {
   const { body } = await createProduct('u1', 'clone-product')

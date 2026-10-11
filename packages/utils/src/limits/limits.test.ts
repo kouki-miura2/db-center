@@ -29,5 +29,7 @@ test('matches the spec table', () => {
     versionDefinitionBytes: 10 * 1024 * 1024,
     revisionCheckScopes: 100,
     auditLogPageSize: 50,
+    postgresConnectTimeoutSeconds: 10,
+    postgresStatementTimeoutSeconds: 60,
   })
 })

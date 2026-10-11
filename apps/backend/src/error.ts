@@ -22,6 +22,11 @@ const ERRORS = {
   limit_exceeded: { status: 409, message: '上限に達しています' },
   duplicate: { status: 409, message: '同じ名前がすでに使われています' },
   invalid_state: { status: 409, message: '現在の状態ではこの操作はできません' },
+  connection_failed: {
+    status: 502,
+    message:
+      'データベースへの接続・処理に失敗しました。TLS証明書・接続情報・接続先を確認してください',
+  },
   too_many_attempts: {
     status: 429,
     message: '入力の失敗が続いたため、しばらく入力できません',

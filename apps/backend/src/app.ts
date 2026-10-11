@@ -24,6 +24,7 @@ import {
   type DefinitionExportService,
 } from './service/definition-export.service.ts'
 import { objectInputSchema } from './service/definition.ts'
+import type { InspectionService } from './service/inspection.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
 import { migrationOptionsSchema } from './service/migration.ts'
@@ -86,6 +87,7 @@ export interface AppDependencies {
   versionService: VersionService
   scriptService: ScriptService
   definitionExportService: DefinitionExportService
+  inspectionService: InspectionService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -764,6 +766,18 @@ export const createApp = (deps: AppDependencies) => {
               userId: requireUser(c).id,
               ...c.req.valid('param'),
               ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/connections/:connectionId/inspect',
+        validate('param', z.object({ connectionId: z.uuid() })),
+        validate('json', z.strictObject({})),
+        async (c) =>
+          c.json(
+            await deps.inspectionService.inspect({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
             }),
           ),
       )

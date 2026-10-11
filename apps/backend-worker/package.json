@@ -15,11 +15,14 @@
   "dependencies": {
     "backend": "workspace:*",
     "libpg-query": "catalog:",
-    "sql.js": "catalog:"
+    "pg": "catalog:",
+    "sql.js": "catalog:",
+    "utils": "workspace:*"
   },
   "devDependencies": {
     "@electric-sql/pglite": "catalog:",
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
     "frontend": "workspace:*",
     "typescript": "catalog:",
     "wrangler": "^4.131.1"

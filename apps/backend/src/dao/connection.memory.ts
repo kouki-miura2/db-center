@@ -18,8 +18,9 @@ const inProduct = (db: MemoryDb, productId: string, connectionId: string) => {
 /** In-memory `ConnectionDao` over the shared `MemoryDb`. */
 export const createConnectionMemoryDao = (db: MemoryDb): ConnectionDao => ({
   findById: async (productId, connectionId) => {
-    const product = memoryTable<ProductRecord>(db, 'products').get(productId)
-    const row = inProduct(db, productId, connectionId)
+    const row = connections(db).get(connectionId)
+    if (!row || (productId !== null && row.productId !== productId)) return null
+    const product = memoryTable<ProductRecord>(db, 'products').get(row.productId)
     return product && product.deletedAt === null && row ? { ...row } : null
   },
 

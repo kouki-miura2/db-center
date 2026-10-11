@@ -65,4 +65,8 @@ export const LIMITS = {
   revisionCheckScopes: 100,
   /** Audit log entries per page (newest first). Used by the API. Provisional. */
   auditLogPageSize: 50,
+  /** PostgreSQL connection timeout, in seconds. Checked by the runtime adapter. Provisional. */
+  postgresConnectTimeoutSeconds: 10,
+  /** PostgreSQL statement timeout, in seconds. Checked by the runtime adapter. Provisional. */
+  postgresStatementTimeoutSeconds: 60,
 } as const

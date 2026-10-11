@@ -33,9 +33,9 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
   findById: async (productId, connectionId) => {
     const row = await db
       .prepare(
-        'SELECT connections.* FROM connections JOIN products ON products.id = connections.product_id WHERE connections.id = ? AND connections.product_id = ? AND products.deleted_at IS NULL',
+        'SELECT connections.* FROM connections JOIN products ON products.id = connections.product_id WHERE connections.id = ? AND (connections.product_id = ? OR ? IS NULL) AND products.deleted_at IS NULL',
       )
-      .bind(connectionId, productId)
+      .bind(connectionId, productId, productId)
       .first<ConnectionRow>()
     return row ? toConnectionRecord(row) : null
   },

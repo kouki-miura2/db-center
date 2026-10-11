@@ -47,6 +47,7 @@ beforeEach(() => {
     versionService: {} as AppDependencies['versionService'],
     scriptService: {} as AppDependencies['scriptService'],
     definitionExportService: {} as AppDependencies['definitionExportService'],
+    inspectionService: {} as AppDependencies['inspectionService'],
     revisionService: {} as AppDependencies['revisionService'],
     auditLogService: {} as AppDependencies['auditLogService'],
     // As in production: every path needs a session except the public ones.

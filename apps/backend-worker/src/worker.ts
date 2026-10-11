@@ -17,6 +17,7 @@ import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createDatabaseService } from 'backend/src/service/database.service.ts'
 import { createDefinitionExportService } from 'backend/src/service/definition-export.service.ts'
+import { createInspectionService } from 'backend/src/service/inspection.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
@@ -37,6 +38,7 @@ import { createProductD1Dao } from './dao/product.d1.ts'
 import { createRevisionD1Dao } from './dao/revision.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
 import { createVersionD1Dao } from './dao/version.d1.ts'
+import { createPostgresAdapter } from './postgres.ts'
 import { createSqlValidator } from './sql-validator.ts'
 
 /**
@@ -107,6 +109,12 @@ const buildApp = (env: WorkerEnv) => {
     }),
     scriptService: createScriptService({ products, objects, sql }),
     definitionExportService: createDefinitionExportService({ products, databases, objects, sql }),
+    inspectionService: createInspectionService({
+      products,
+      connections: createConnectionRepository(createConnectionD1Dao(env.DB)),
+      secrets,
+      postgres: createPostgresAdapter(),
+    }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),
     }),
