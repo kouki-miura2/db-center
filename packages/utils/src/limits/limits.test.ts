@@ -25,5 +25,6 @@ test('matches the spec table', () => {
     databasesPerProduct: 20,
     objectsPerVersion: 1000,
     columnsPerTable: 200,
+    versionDefinitionBytes: 10 * 1024 * 1024,
   })
 })
