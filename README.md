@@ -115,6 +115,35 @@ Before the first deploy, set the Google OAuth client ID in both places (without 
 
   Never set `DEV_LOGIN` for a deployed Worker.
 
+Automatic PostgreSQL deployments additionally need Workers Paid, an R2 bucket and a Workflow.
+Without either binding, automatic execution is disabled; script export remains available.
+In `apps/backend-worker`, copy `wrangler.jsonc` to the gitignored `wrangler.local.jsonc` and add:
+
+```json
+{
+  "r2_buckets": [{ "binding": "DEPLOYMENT_SQL", "bucket_name": "<your-bucket>" }],
+  "workflows": [
+    {
+      "binding": "DEPLOYMENT_WORKFLOW",
+      "name": "<your-workflow>",
+      "class_name": "DeploymentWorkflowEntrypoint"
+    }
+  ]
+}
+```
+
+Keep actual bucket/workflow names and resource IDs only in that untracked configuration.
+Use `vp exec wrangler types --config wrangler.local.jsonc` after adding bindings.
+Build the frontend, apply D1 migrations, then deploy using
+`vp exec wrangler deploy --config wrangler.local.jsonc` from `apps/backend-worker`.
+Set `GOOGLE_CLIENT_ID` and `ENCRYPTION_KEY` through the same configuration's secret store;
+set `VITE_GOOGLE_WEB_CLIENT_ID` in `apps/frontend/.env.local` before building the frontend.
+Do not enable `DEV_LOGIN` in production. Deployment SQL and the immutable plan are stored under
+`deployments/<id>.sql` and `deployments/<id>.json`. The Workflow payload contains only the execution ID;
+passwords remain encrypted in D1 and are never placed in the payload or progress logs.
+Workflow DDL retries are disabled. A lost start/commit acknowledgement or interrupted execution
+requires reconciliation against its ID and `_dbcenter.version`; do not replay its SQL.
+
 - Regenerate Workers binding types:
 
 ```bash

@@ -44,6 +44,7 @@ import { createVersionD1Dao } from './dao/version.d1.ts'
 import { createDeploymentStorage, createDeploymentWorkflow } from './deployment-runtime.ts'
 import { createPostgresAdapter } from './postgres.ts'
 import { createSqlValidator } from './sql-validator.ts'
+export { DeploymentWorkflowEntrypoint } from './deployment-workflow.ts'
 
 /**
  * Secrets and local-only settings, which `wrangler types` doesn't know about since they aren't in

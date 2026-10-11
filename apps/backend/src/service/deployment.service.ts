@@ -13,7 +13,7 @@ import type { ObjectRepository } from '../repository/object.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SqlValidator } from '../repository/sql-validator.interface.ts'
 import { generatePostgresDdl } from './ddl-postgres.ts'
-import { ddlOptionsSchema, normalizedDesign, type SqlStep } from './ddl.ts'
+import { ddlOptionsSchema, normalizedDesign, sqlLiteral, type SqlStep } from './ddl.ts'
 import { canonical } from './design-diff.ts'
 import { designHash, hashText } from './drift.ts'
 import type { InspectionService } from './inspection.service.ts'
@@ -97,6 +97,13 @@ export const createDeploymentService = (deps: {
     return { plan, inspection, reasons }
   }
   return {
+    get: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
+      const record = await deps.deployments.findById(deploymentId)
+      if (!record || !(await deps.objects.findContext(record.toVersionId)))
+        throw new AppError('not_found')
+      await requireMembership(deps.products, record.productId, userId)
+      return deploymentView(record)
+    },
     preview: async (input: DeploymentInput) => {
       const connection = await authorize(input.userId, input.connectionId)
       const { plan, inspection, reasons } = await prepare(input, connection)
@@ -132,8 +139,16 @@ export const createDeploymentService = (deps: {
       if (reasons.length)
         throw new AppError('invalid_state', { message: '接続先の事前チェックに合格しませんでした' })
       const now = Date.now(),
-        id = crypto.randomUUID(),
-        serialized = JSON.stringify(plan)
+        id = crypto.randomUUID()
+      const setting = `SET dbcenter.deployment_id TO ${sqlLiteral(id)};`
+      plan.steps.unshift({
+        objectKey: null,
+        sql: setting,
+        transactional: false,
+        beforeTransaction: true,
+      })
+      plan.sql = setting + '\n\n' + plan.sql
+      const serialized = JSON.stringify(plan)
       const record: DeploymentRecord = {
         id,
         productId: plan.productId,

@@ -775,6 +775,17 @@ export const createApp = (deps: AppDependencies) => {
             }),
           ),
       )
+      .get(
+        '/deployments/:deploymentId',
+        validate('param', z.strictObject({ deploymentId: z.uuid() })),
+        async (c) =>
+          c.json(
+            await deps.deploymentService.get({
+              ...c.req.valid('param'),
+              userId: requireUser(c).id,
+            }),
+          ),
+      )
       .post(
         '/connections/:connectionId/deployment-preview',
         validate('param', z.strictObject({ connectionId: z.uuid() })),

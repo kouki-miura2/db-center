@@ -31,5 +31,6 @@ test('matches the spec table', () => {
     auditLogPageSize: 50,
     postgresConnectTimeoutSeconds: 10,
     postgresStatementTimeoutSeconds: 60,
+    deploymentWorkflowTimeoutMinutes: 60,
   })
 })

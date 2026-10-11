@@ -69,4 +69,6 @@ export const LIMITS = {
   postgresConnectTimeoutSeconds: 10,
   /** PostgreSQL statement timeout, in seconds. Checked by the runtime adapter. Provisional. */
   postgresStatementTimeoutSeconds: 60,
+  /** Maximum duration of the one Workflow execution step, in minutes. Provisional. */
+  deploymentWorkflowTimeoutMinutes: 60,
 } as const
