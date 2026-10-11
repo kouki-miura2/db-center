@@ -7,9 +7,11 @@ import type {
   Database,
   DatabaseRepository,
   DatabaseSummary,
+  Version,
 } from '../repository/database.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
+import type { ScopeResult } from './product.service.ts'
 import { assertConfirmationName, requireMembership } from './product.service.ts'
 
 export interface DatabaseView {
@@ -30,7 +32,39 @@ export interface DatabaseListItemView extends DatabaseView {
   tableCount: number
 }
 
+/** A version in the version history ("各論 > データベース > バージョンの状態"). */
+export interface VersionView {
+  id: string
+  number: number
+  status: VersionStatus
+  /** The final version it was created from; null for v1. */
+  sourceVersionId: string | null
+  memo: string | null
+  provisionalAt: number | null
+  finalizedAt: number | null
+  createdAt: number
+  updatedAt: number
+  schemaCount: number
+  tableCount: number
+}
+
+/**
+ * The database scope ("参照 > データの取得とキャッシュ": データベース): the database, its common
+ * column set and every version, newest first. Deployments join it with automatic deployment.
+ */
+export interface DatabaseScopeView {
+  database: DatabaseView
+  commonColumns: unknown[]
+  versions: VersionView[]
+}
+
 export interface DatabaseService {
+  getDatabase: (input: {
+    userId: string
+    productId: string
+    databaseId: string
+    clientRevision?: number
+  }) => Promise<ScopeResult<DatabaseScopeView>>
   /** An empty database: v1 (editing) with the target's initial schema. */
   createDatabase: (input: {
     userId: string
@@ -62,6 +96,20 @@ const toView = ({ id, name, description, createdAt, updatedAt }: Database): Data
   description,
   createdAt,
   updatedAt,
+})
+
+const toVersionView = (version: Version): VersionView => ({
+  id: version.id,
+  number: version.number,
+  status: version.status,
+  sourceVersionId: version.sourceVersionId,
+  memo: version.memo,
+  provisionalAt: version.provisionalAt,
+  finalizedAt: version.finalizedAt,
+  createdAt: version.createdAt,
+  updatedAt: version.updatedAt,
+  schemaCount: version.schemaCount,
+  tableCount: version.tableCount,
 })
 
 export const toDatabaseListItem = ({
@@ -141,6 +189,26 @@ export const createDatabaseService = (deps: {
   const actor = (userId: string) => ({ userId, allowedRoles: allowedRoles('manageDatabases') })
 
   return {
+    getDatabase: async ({ userId, productId, databaseId, clientRevision }) => {
+      await requireMembership(deps.products, productId, userId)
+      // The database row is enough to answer "unchanged".
+      const current = await find(productId, databaseId)
+      if (current.revision === clientRevision) {
+        return { mode: 'unchanged', revision: current.revision }
+      }
+      const scope = await deps.databases.findScope(productId, databaseId)
+      if (!scope) throw new AppError('not_found')
+      return {
+        mode: 'full',
+        revision: scope.database.revision,
+        data: {
+          database: toView(scope.database),
+          commonColumns: scope.commonColumns,
+          versions: scope.versions.toSorted((a, b) => b.number - a.number).map(toVersionView),
+        },
+      }
+    },
+
     createDatabase: async ({ userId, productId, name, description }) => {
       const { product } = await authorize(productId, userId)
       const now = Date.now()

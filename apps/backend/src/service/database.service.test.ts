@@ -2,7 +2,7 @@ import { LIMITS } from 'utils'
 import { expect, test, vi } from 'vite-plus/test'
 
 import { AppError } from '../error.ts'
-import type { Database, DatabaseRepository } from '../repository/database.repository.ts'
+import type { Database, DatabaseRepository, Version } from '../repository/database.repository.ts'
 import type { Membership, ProductRepository } from '../repository/product.repository.ts'
 import { createDatabaseService } from './database.service.ts'
 
@@ -30,6 +30,7 @@ const database: Database = {
 
 const fakeDatabases = (overrides: Partial<DatabaseRepository> = {}): DatabaseRepository => ({
   findById: async () => database,
+  findScope: async () => null,
   create: async () => ({ productRevision: 4 }),
   update: async () => ({ database: { ...database, name: 'renamed' }, productRevision: 4 }),
   delete: async () => ({ productRevision: 4 }),
@@ -194,4 +195,86 @@ test('deletes only when the typed name matches', async () => {
     expectedUpdatedAt: 2,
     audit: { action: 'delete', summary: 'ec_main' },
   })
+})
+
+const version = (number: number, status: Version['status']): Version => ({
+  id: `v${number}`,
+  databaseId: 'd1',
+  number,
+  status,
+  sourceVersionId: number === 1 ? null : `v${number - 1}`,
+  memo: null,
+  provisionalAt: null,
+  finalizedAt: null,
+  createdAt: number,
+  updatedAt: number,
+  revision: 1,
+  compactedRevision: 1,
+  schemaCount: 1,
+  tableCount: number,
+  definitionBytes: 2,
+})
+
+test('answers the database scope unchanged after reading only the database row', async () => {
+  const findScope = vi.fn()
+
+  const result = await service('member', fakeDatabases({ findScope })).getDatabase({
+    userId: 'u1',
+    productId: 'p1',
+    databaseId: 'd1',
+    clientRevision: 3,
+  })
+
+  expect(result).toEqual({ mode: 'unchanged', revision: 3 })
+  expect(findScope).not.toHaveBeenCalled()
+})
+
+test('returns the whole database scope, versions newest first', async () => {
+  const databases = fakeDatabases({
+    findScope: async () => ({
+      database: { ...database, revision: 4 },
+      commonColumns: [{ name: 'created_at' }],
+      versions: [version(1, 'final'), version(3, 'editing'), version(2, 'final')],
+    }),
+  })
+
+  const result = await service('member', databases).getDatabase({
+    userId: 'u1',
+    productId: 'p1',
+    databaseId: 'd1',
+    clientRevision: 2,
+  })
+
+  expect(result).toMatchObject({
+    mode: 'full',
+    revision: 4,
+    data: {
+      database: { id: 'd1', name: 'ec_main', description: '基幹', createdAt: 1, updatedAt: 2 },
+      commonColumns: [{ name: 'created_at' }],
+    },
+  })
+  if (result.mode !== 'full') throw new Error('expected full')
+  expect(result.data.versions.map((v) => v.number)).toEqual([3, 2, 1])
+  expect(result.data.versions[0]).toEqual({
+    id: 'v3',
+    number: 3,
+    status: 'editing',
+    sourceVersionId: 'v2',
+    memo: null,
+    provisionalAt: null,
+    finalizedAt: null,
+    createdAt: 3,
+    updatedAt: 3,
+    schemaCount: 1,
+    tableCount: 3,
+  })
+})
+
+test('hides the database scope from a non-member, and a deleted database', async () => {
+  const input = { userId: 'u1', productId: 'p1', databaseId: 'd1' }
+
+  await expect(service(null).getDatabase(input)).rejects.toMatchObject({ code: 'not_found' })
+  await expect(
+    service('owner', fakeDatabases({ findById: async () => null })).getDatabase(input),
+  ).rejects.toMatchObject({ code: 'not_found' })
 })

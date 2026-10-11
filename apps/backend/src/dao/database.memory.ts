@@ -5,30 +5,14 @@ import type {
   DatabaseDao,
   DatabaseRecord,
   DatabaseSummaryRecord,
-  VersionStatus,
+  VersionRecord,
 } from './database.interface.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import { assertActorRole, bumpProductRevision } from './product.memory.ts'
 import { nextUpdatedAt } from './write.ts'
 
-/** One `versions` row. */
-export interface VersionRow {
-  id: string
-  databaseId: string
-  number: number
-  status: VersionStatus
-  sourceVersionId: string | null
-  memo: string | null
-  provisionalAt: number | null
-  finalizedAt: number | null
-  createdAt: number
-  updatedAt: number
-  revision: number
-  compactedRevision: number
-  schemaCount: number
-  tableCount: number
-  definitionBytes: number
-}
+/** One `databases` row: the record plus its common column set. */
+export type DatabaseRow = DatabaseRecord & { commonColumns: string | null }
 
 /** One `objects` row. */
 export interface ObjectRow {
@@ -46,12 +30,23 @@ export interface ObjectRow {
   deletedAt: number | null
 }
 
-export const databases = (db: MemoryDb) => memoryTable<DatabaseRecord>(db, 'databases')
-export const versions = (db: MemoryDb) => memoryTable<VersionRow>(db, 'versions')
+export const databases = (db: MemoryDb) => memoryTable<DatabaseRow>(db, 'databases')
+export const versions = (db: MemoryDb) => memoryTable<VersionRecord>(db, 'versions')
 export const objects = (db: MemoryDb) => memoryTable<ObjectRow>(db, 'objects')
 
 const activeOf = (db: MemoryDb, productId: string) =>
   [...databases(db).values()].filter((row) => row.productId === productId && row.deletedAt === null)
+
+const toRecord = (row: DatabaseRow): DatabaseRecord => ({
+  id: row.id,
+  productId: row.productId,
+  name: row.name,
+  description: row.description,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  revision: row.revision,
+  deletedAt: row.deletedAt,
+})
 
 const inProduct = (db: MemoryDb, productId: string, databaseId: string) => {
   const row = databases(db).get(databaseId)
@@ -74,7 +69,7 @@ export const databaseSummaries = (db: MemoryDb, productId: string): DatabaseSumm
     if (!latest) return []
     const final = own.find((row) => row.status === 'final')
     return {
-      database: { ...database },
+      database: toRecord(database),
       latestVersion: {
         id: latest.id,
         number: latest.number,
@@ -91,14 +86,27 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
   findById: async (productId, databaseId) => {
     const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
     const row = inProduct(db, productId, databaseId)
-    return product && product.deletedAt === null && row ? { ...row } : null
+    return product && product.deletedAt === null && row ? toRecord(row) : null
+  },
+
+  findScope: async (productId, databaseId) => {
+    const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
+    const row = inProduct(db, productId, databaseId)
+    if (!product || product.deletedAt !== null || !row) return null
+    return {
+      database: toRecord(row),
+      commonColumns: row.commonColumns,
+      versions: [...versions(db).values()]
+        .filter((version) => version.databaseId === databaseId)
+        .map((version) => ({ ...version })),
+    }
   },
 
   create: async ({ database, versionId, schema, maxDatabases, userId, allowedRoles, audit }) =>
     atomic(db, () => {
       assertActorRole(db, database.productId, userId, allowedRoles)
       assertNameFree(db, database.productId, database.name, database.id)
-      databases(db).set(database.id, { ...database })
+      databases(db).set(database.id, { ...database, commonColumns: null })
       if (activeOf(db, database.productId).length > maxDatabases) {
         throw new AppError('limit_exceeded')
       }
@@ -154,7 +162,7 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
       row.revision += 1
       const productRevision = bumpProductRevision(db, input.productId)
       appendAuditLog(db, input.audit)
-      return { database: { ...row }, productRevision }
+      return { database: toRecord(row), productRevision }
     }),
 
   delete: async ({ productId, databaseId, expectedUpdatedAt, now, userId, allowedRoles, audit }) =>

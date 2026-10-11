@@ -529,6 +529,22 @@ export const createApp = (deps: AppDependencies) => {
           )
         },
       )
+      // The database scope.
+      .get(
+        '/products/:productId/databases/:databaseId',
+        validate('param', databaseParams),
+        validate('query', revisionQuery),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.databaseService.getDatabase({
+              userId: user.id,
+              ...c.req.valid('param'),
+              clientRevision: c.req.valid('query').revision,
+            }),
+          )
+        },
+      )
       // Replaces the name and description; an empty description removes it.
       .patch(
         '/products/:productId/databases/:databaseId',

@@ -15,6 +15,32 @@ export interface DatabaseRecord {
   deletedAt: number | null
 }
 
+/** One `versions` row. */
+export interface VersionRecord {
+  id: string
+  databaseId: string
+  number: number
+  status: VersionStatus
+  sourceVersionId: string | null
+  memo: string | null
+  provisionalAt: number | null
+  finalizedAt: number | null
+  createdAt: number
+  updatedAt: number
+  revision: number
+  compactedRevision: number
+  schemaCount: number
+  tableCount: number
+  definitionBytes: number
+}
+
+/** The database scope: the database, its common column set (JSON) and all its versions. */
+export interface DatabaseScopeRecord {
+  database: DatabaseRecord
+  commonColumns: string | null
+  versions: VersionRecord[]
+}
+
 /**
  * A row of the product scope's database list: the database, its latest version (with the counts
  * shown in the list) and its latest final version.
@@ -52,6 +78,11 @@ interface DatabaseWrite {
 export interface DatabaseDao {
   /** A database that isn't deleted, of a product that isn't deleted, or null. */
   findById: (productId: string, databaseId: string) => Promise<DatabaseRecord | null>
+  /**
+   * The database scope, read together so it matches the database's revision. Null if the
+   * database or its product is deleted, or it isn't the product's.
+   */
+  findScope: (productId: string, databaseId: string) => Promise<DatabaseScopeRecord | null>
   /**
    * Creates a database with its v1 (editing) holding `schema`, if any. Throws `duplicate` if a
    * database of the product (deleted ones aside) has the name, and `limit_exceeded` beyond

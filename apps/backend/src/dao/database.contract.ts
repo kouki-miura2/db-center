@@ -127,6 +127,39 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
     expect(await f.countAuditLogs()).toBe(3)
   })
 
+  test('reads the database scope: the database, its common columns and its versions', async () => {
+    const f = await arrange()
+    await create(f, 'd1')
+
+    expect(await f.dao.findScope('p1', 'd1')).toEqual({
+      database: database('d1'),
+      commonColumns: null,
+      versions: [
+        {
+          id: 'v-d1',
+          databaseId: 'd1',
+          number: 1,
+          status: 'editing',
+          sourceVersionId: null,
+          memo: null,
+          provisionalAt: null,
+          finalizedAt: null,
+          createdAt: 1000,
+          updatedAt: 1000,
+          revision: 1,
+          compactedRevision: 1,
+          schemaCount: 1,
+          tableCount: 0,
+          definitionBytes: '{"comment":""}'.length + 6,
+        },
+      ],
+    })
+    expect(await f.dao.findScope('other', 'd1')).toBeNull()
+    expect(await f.dao.findScope('p1', 'missing')).toBeNull()
+    await f.markProductDeleted('p1')
+    expect(await f.dao.findScope('p1', 'd1')).toBeNull()
+  })
+
   test('refuses a name in use in the product, changing nothing', async () => {
     const f = await arrange()
     await create(f, 'd1', { name: 'main' })
@@ -244,6 +277,7 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
     expect(await remove(1000)).toEqual({ productRevision: 3 })
     await expect(remove(2000)).rejects.toMatchObject({ code: 'stale_update' })
     expect(await f.dao.findById('p1', 'd1')).toBeNull()
+    expect(await f.dao.findScope('p1', 'd1')).toBeNull()
     expect((await f.products.findScope('p1'))?.databases).toEqual([])
     await expect(create(f, 'd2', { name: 'main' })).resolves.toBeDefined()
     await expect(update(f, { databaseId: 'd1', expectedUpdatedAt: 2000 })).rejects.toMatchObject({

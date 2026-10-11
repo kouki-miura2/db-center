@@ -36,6 +36,11 @@ const audit: AuditLogRecord = {
 const created: Parameters<DatabaseDao['create']>[0][] = []
 const fakeDao: DatabaseDao = {
   findById: async () => record,
+  findScope: async (_, databaseId) => ({
+    database: record,
+    commonColumns: databaseId === 'd2' ? '[{"name":"created_at"}]' : null,
+    versions: [],
+  }),
   create: async (input) => {
     created.push(input)
     return { productRevision: 4 }
@@ -84,4 +89,15 @@ test('stores a new database as not deleted', async () => {
   })
 
   expect(created[0]?.database).toEqual(record)
+})
+
+test('maps the database scope, parsing the common column set', async () => {
+  const repository = createDatabaseRepository(fakeDao)
+
+  expect(await repository.findScope('p1', 'd1')).toEqual({
+    database,
+    commonColumns: [],
+    versions: [],
+  })
+  expect((await repository.findScope('p1', 'd2'))?.commonColumns).toEqual([{ name: 'created_at' }])
 })

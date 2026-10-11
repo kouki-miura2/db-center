@@ -2,6 +2,7 @@ import type {
   DatabaseDao,
   DatabaseRecord,
   DatabaseSummaryRecord,
+  VersionRecord,
 } from '../dao/database.interface.ts'
 
 /** A database that isn't deleted, as the services see it. */
@@ -15,10 +16,20 @@ export interface Database {
   revision: number
 }
 
+export type Version = VersionRecord
+
+export interface DatabaseScope {
+  database: Database
+  /** The common column set, in order; empty if none is defined. */
+  commonColumns: unknown[]
+  versions: Version[]
+}
+
 export type DatabaseSummary = Omit<DatabaseSummaryRecord, 'database'> & { database: Database }
 
 export interface DatabaseRepository {
   findById: (productId: string, databaseId: string) => Promise<Database | null>
+  findScope: (productId: string, databaseId: string) => Promise<DatabaseScope | null>
   create: (
     input: Omit<Parameters<DatabaseDao['create']>[0], 'database'> & { database: Database },
   ) => Promise<{ productRevision: number }>
@@ -47,6 +58,17 @@ export const createDatabaseRepository = (dao: DatabaseDao): DatabaseRepository =
   findById: async (productId, databaseId) => {
     const record = await dao.findById(productId, databaseId)
     return record ? toDatabase(record) : null
+  },
+  findScope: async (productId, databaseId) => {
+    const scope = await dao.findScope(productId, databaseId)
+    return scope
+      ? {
+          database: toDatabase(scope.database),
+          commonColumns:
+            scope.commonColumns === null ? [] : (JSON.parse(scope.commonColumns) as unknown[]),
+          versions: scope.versions,
+        }
+      : null
   },
   create: ({ database, ...input }) =>
     dao.create({ ...input, database: { ...database, deletedAt: null } }),

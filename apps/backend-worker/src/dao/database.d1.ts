@@ -2,6 +2,7 @@ import type {
   DatabaseDao,
   DatabaseRecord,
   DatabaseSummaryRecord,
+  VersionRecord,
   VersionStatus,
 } from 'backend/src/dao/database.interface.ts'
 
@@ -18,6 +19,46 @@ interface DatabaseRow {
   revision: number
   deleted_at: number | null
 }
+
+interface VersionRow {
+  id: string
+  database_id: string
+  number: number
+  status: VersionStatus
+  source_version_id: string | null
+  memo: string | null
+  provisional_at: number | null
+  finalized_at: number | null
+  created_at: number
+  updated_at: number
+  revision: number
+  compacted_revision: number
+  schema_count: number
+  table_count: number
+  definition_bytes: number
+}
+
+const toVersionRecord = (row: VersionRow): VersionRecord => ({
+  id: row.id,
+  databaseId: row.database_id,
+  number: row.number,
+  status: row.status,
+  sourceVersionId: row.source_version_id,
+  memo: row.memo,
+  provisionalAt: row.provisional_at,
+  finalizedAt: row.finalized_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  revision: row.revision,
+  compactedRevision: row.compacted_revision,
+  schemaCount: row.schema_count,
+  tableCount: row.table_count,
+  definitionBytes: row.definition_bytes,
+})
+
+// A database that isn't deleted, of a product that isn't deleted. Params: databaseId, productId.
+const ACTIVE_DATABASE =
+  'SELECT databases.* FROM databases JOIN products ON products.id = databases.product_id WHERE databases.id = ? AND databases.product_id = ? AND databases.deleted_at IS NULL AND products.deleted_at IS NULL'
 
 export type DatabaseSummaryRow = DatabaseRow & {
   version_id: string
@@ -80,13 +121,25 @@ const revisionAt = (results: D1Result[], index: number) =>
 /** D1 `DatabaseDao` (databases, and the v1 and schema a new database starts with). */
 export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
   findById: async (productId, databaseId) => {
-    const row = await db
-      .prepare(
-        'SELECT databases.* FROM databases JOIN products ON products.id = databases.product_id WHERE databases.id = ? AND databases.product_id = ? AND databases.deleted_at IS NULL AND products.deleted_at IS NULL',
-      )
-      .bind(databaseId, productId)
-      .first<DatabaseRow>()
+    const row = await db.prepare(ACTIVE_DATABASE).bind(databaseId, productId).first<DatabaseRow>()
     return row ? toDatabaseRecord(row) : null
+  },
+
+  findScope: async (productId, databaseId) => {
+    // One batch is one transaction, so the versions match the database's revision.
+    const [database, versions] = await db.batch([
+      db.prepare(ACTIVE_DATABASE).bind(databaseId, productId),
+      db.prepare('SELECT * FROM versions WHERE database_id = ?').bind(databaseId),
+    ])
+    const row = database?.results[0] as
+      | (DatabaseRow & { common_columns: string | null })
+      | undefined
+    if (!row) return null
+    return {
+      database: toDatabaseRecord(row),
+      commonColumns: row.common_columns,
+      versions: ((versions?.results ?? []) as VersionRow[]).map(toVersionRecord),
+    }
   },
 
   create: async ({ database, versionId, schema, maxDatabases, userId, allowedRoles, audit }) => {

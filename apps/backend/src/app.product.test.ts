@@ -772,17 +772,75 @@ describe('databases', () => {
     expect((await remove('main')).status).toBe(404)
   })
 
+  test('reads the database scope: versions and common columns, unchanged when current', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const path = `/api/products/${productId}/databases/${database.id}`
+
+    const full = await (await app.request(path, as('u2'))).json()
+
+    expect(full).toEqual({
+      mode: 'full',
+      revision: 1,
+      data: {
+        database: {
+          id: database.id,
+          name: 'main',
+          description: null,
+          createdAt: database.createdAt,
+          updatedAt: database.updatedAt,
+        },
+        commonColumns: [],
+        versions: [
+          {
+            id: database.latestVersion.id,
+            number: 1,
+            status: 'editing',
+            sourceVersionId: null,
+            memo: null,
+            provisionalAt: null,
+            finalizedAt: null,
+            createdAt: database.createdAt,
+            updatedAt: database.createdAt,
+            schemaCount: 1,
+            tableCount: 0,
+          },
+        ],
+      },
+    })
+    expect(await (await app.request(`${path}?revision=1`, as('u2'))).json()).toEqual({
+      mode: 'unchanged',
+      revision: 1,
+    })
+    expect((await app.request(path, as('u3'))).status).toBe(404)
+  })
+
+  test('a deleted database’s scope is 404', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const path = `/api/products/${productId}/databases/${database.id}`
+    await app.request(
+      path,
+      as('u1', 'DELETE', { confirmationName: 'main', expectedUpdatedAt: database.updatedAt }),
+    )
+
+    expect((await app.request(path, as('u1'))).status).toBe(404)
+    expect((await app.request(`${path}?revision=2`, as('u1'))).status).toBe(404)
+  })
+
   test('a deleted product’s database can’t be reached by its ID', async () => {
     const productId = await arrange()
     const { database } = await (await createDatabase(productId, { name: 'main' })).json()
     const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
     if (product) product.deletedAt = Date.now()
 
+    const path = `/api/products/${productId}/databases/${database.id}`
     const res = await app.request(
-      `/api/products/${productId}/databases/${database.id}`,
+      path,
       as('u1', 'PATCH', { name: 'x', description: '', expectedUpdatedAt: database.updatedAt }),
     )
 
     expect(res.status).toBe(404)
+    expect((await app.request(path, as('u1'))).status).toBe(404)
   })
 })
