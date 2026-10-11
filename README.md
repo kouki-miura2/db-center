@@ -13,10 +13,9 @@ vp run dev-b   # backend
 vp run dev-f   # frontend
 ```
 
-In production, the backend runtime serves both: the Worker (`apps/backend-worker`) serves the
-frontend build as static assets, and the Node.js server (`apps/backend-node`) serves it with
-`serveStatic`. Both list `frontend` as a workspace dependency, so `vp run -r build` (or `-t` for
-one package) builds the frontend once, before them; the Worker's `deploy` builds it itself.
+In production, the Worker (`apps/backend-worker`) serves both: the API, and the frontend build as
+static assets. It lists `frontend` as a workspace dependency, so `vp run -r build` (or
+`vp run -t backend-worker#build`) builds the frontend once, before it.
 
 - Check everything is ready:
 
@@ -52,7 +51,7 @@ vp run utils#test
 
 ## apps/backend
 
-Runtime-agnostic routes and business logic. Run it through `apps/backend-worker` or `apps/backend-node`.
+Runtime-agnostic routes and business logic. Run it through `apps/backend-worker`.
 
 - Run format/lint/type checks:
 
@@ -96,53 +95,141 @@ vp run backend-worker#migrate:local
 vp run -t backend-worker#build
 ```
 
-- Deploy (frontend + API, one Worker):
+- Deploy (frontend + API, one Worker): see "Deploying to Cloudflare" below.
+  (`vp run backend-worker#deploy` deploys `wrangler.jsonc` as it is, without the per-environment
+  settings those steps add.)
 
-```bash
-vp run backend-worker#deploy
-```
+### Deploying to Cloudflare
 
-Before the first deploy, set the Google OAuth client ID in both places (without it, Google sign-in is rejected):
+One Worker serves the frontend at `/` and the API at `/api`. Automatic PostgreSQL
+deployments (build/migration) need **Workers Paid**; on the free plan, leave out the R2 bucket
+and the Workflow below and the app runs with automatic execution disabled (script export still
+works).
 
-- Backend: `npx wrangler secret put GOOGLE_CLIENT_ID` (run in `apps/backend-worker`).
-- Frontend: `VITE_GOOGLE_WEB_CLIENT_ID` in `apps/frontend/.env.local`.
+Account-specific values (the D1 database ID, the R2 bucket name, the Workflow name) never go in a
+tracked file. They live in `apps/backend-worker/wrangler.local.jsonc` (gitignored), a copy of
+`wrangler.jsonc` with them added. Run every command below in `apps/backend-worker`.
 
-  Also set the encryption key for connection passwords and invitation passcodes (32 random bytes, base64,
-  e.g. `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`). Keep it: losing it makes stored
-  passwords unreadable.
+1. **Create the resources** (once per environment):
 
-  - Backend: `npx wrangler secret put ENCRYPTION_KEY` (run in `apps/backend-worker`).
+   ```bash
+   vp exec wrangler d1 create db-center
+   vp exec wrangler r2 bucket create <bucket>      # automatic deployments only
+   ```
 
-  Never set `DEV_LOGIN` for a deployed Worker.
+2. **Write `wrangler.local.jsonc`**: copy `wrangler.jsonc` and add the database ID printed by
+   `d1 create` to the `DB` binding, plus (automatic deployments only) the bucket and the Workflow:
 
-Automatic PostgreSQL deployments additionally need Workers Paid, an R2 bucket and a Workflow.
-Without either binding, automatic execution is disabled; script export remains available.
-In `apps/backend-worker`, copy `wrangler.jsonc` to the gitignored `wrangler.local.jsonc` and add:
+   ```jsonc
+   {
+     // ...everything from wrangler.jsonc, then:
+     "d1_databases": [
+       {
+         "binding": "DB",
+         "database_name": "db-center",
+         "database_id": "<database id>",
+         "migrations_dir": "migrations",
+       },
+     ],
+     "r2_buckets": [{ "binding": "DEPLOYMENT_SQL", "bucket_name": "<bucket>" }],
+     "workflows": [
+       {
+         "binding": "DEPLOYMENT_WORKFLOW",
+         "name": "<workflow name>",
+         "class_name": "DeploymentWorkflowEntrypoint",
+       },
+     ],
+   }
+   ```
 
-```json
-{
-  "r2_buckets": [{ "binding": "DEPLOYMENT_SQL", "bucket_name": "<your-bucket>" }],
-  "workflows": [
-    {
-      "binding": "DEPLOYMENT_WORKFLOW",
-      "name": "<your-workflow>",
-      "class_name": "DeploymentWorkflowEntrypoint"
-    }
-  ]
-}
-```
+   The daily cleanup's Cron Trigger (`triggers.crons`, 03:00 JST) comes along with the copy.
+   Keep the R2 bucket private: no public access, no custom domain. Regenerate the binding types
+   with `vp exec wrangler types --config wrangler.local.jsonc`.
 
-Keep actual bucket/workflow names and resource IDs only in that untracked configuration.
-Use `vp exec wrangler types --config wrangler.local.jsonc` after adding bindings.
-Build the frontend, apply D1 migrations, then deploy using
-`vp exec wrangler deploy --config wrangler.local.jsonc` from `apps/backend-worker`.
-Set `GOOGLE_CLIENT_ID` and `ENCRYPTION_KEY` through the same configuration's secret store;
-set `VITE_GOOGLE_WEB_CLIENT_ID` in `apps/frontend/.env.local` before building the frontend.
-Do not enable `DEV_LOGIN` in production. Deployment SQL and the immutable plan are stored under
-`deployments/<id>.sql` and `deployments/<id>.json`. The Workflow payload contains only the execution ID;
-passwords remain encrypted in D1 and are never placed in the payload or progress logs.
-Workflow DDL retries are disabled. A lost start/commit acknowledgement or interrupted execution
-requires reconciliation against its ID and `_dbcenter.version`; do not replay its SQL.
+3. **Set the secrets** of the Worker:
+
+   ```bash
+   vp exec wrangler secret put GOOGLE_CLIENT_ID --config wrangler.local.jsonc
+   vp exec wrangler secret put ENCRYPTION_KEY --config wrangler.local.jsonc
+   ```
+
+   - `GOOGLE_CLIENT_ID`: the web OAuth client ID. Unset, every Google sign-in is rejected.
+   - `ENCRYPTION_KEY`: 32 random bytes in base64
+     (`node -e "console.log(crypto.randomBytes(32).toString('base64'))"`), encrypting connection
+     passwords and invitation passcodes. Unset, setting a password or inviting is refused. Keep a
+     copy: losing it makes stored passwords unreadable.
+   - Never set `DEV_LOGIN` on a deployed Worker.
+
+4. **Set the frontend's public values** in `apps/frontend/.env.local` (gitignored; build-time,
+   readable by anyone who can open the app):
+
+   ```
+   VITE_GOOGLE_WEB_CLIENT_ID=<the same web OAuth client ID>
+   VITE_OPERATOR_NAME=<operator name shown in the terms and privacy policy>
+   VITE_CONTACT_EMAIL=<contact email shown in the terms and privacy policy>
+   ```
+
+5. **Apply the D1 migrations** (first deploy, and every time `migrations/` gains a file), before
+   deploying the code that needs them:
+
+   ```bash
+   vp exec wrangler d1 migrations apply DB --remote --config wrangler.local.jsonc
+   ```
+
+6. **Build and deploy**:
+
+   ```bash
+   vp run frontend#build
+   vp exec wrangler deploy --config wrangler.local.jsonc
+   ```
+
+   Only the build output is deployed: never upload `.env*`, `.dev.vars`, local databases or
+   source maps.
+
+### Operating it
+
+- **Logs**: Workers Logs (`observability` in `wrangler.jsonc`) hold the request log and the daily
+  job's JSON lines: `maintenance task completed` / `maintenance task failed` per task,
+  `purged` / `purge postponed` / `purge failed` per product or database, and
+  `deployment reconciled` per deployment, each with the IDs involved and never a password,
+  token or passcode.
+- **The daily job** (`scheduled` in `src/worker.ts`) deletes expired sessions and invitations,
+  replaces expired invitees' emails in the audit log, deletes old passcode failures and audit log
+  entries, purges products and databases deleted past their retention, and reconciles deployments
+  left running. Every task is safe to run again: a failed or cut-short run is completed by the
+  next one. To run it on demand locally: `vp exec wrangler dev --test-scheduled`, then open
+  `http://localhost:8787/__scheduled`.
+- **A purge keeps being postponed**: the log's `reason` says why. `deployment_running` waits for
+  the deployment to end (see below); `storage_not_configured` means a product or database with
+  deployment SQL in R2 but no `DEPLOYMENT_SQL` binding, so add the binding back. A failed R2
+  delete leaves the D1 rows in place, and the next run deletes again (already deleted keys are
+  skipped).
+
+### When an automatic deployment goes wrong
+
+Deployment SQL and its frozen plan are stored once under `deployments/<id>.sql` and
+`deployments/<id>.json`. The Workflow payload holds only the execution ID; passwords stay
+encrypted in D1. DDL is never retried automatically and never replayed: do not run a
+deployment's SQL again by hand to "finish" it.
+
+- **Stuck as running**: the daily job reconciles every deployment still running some time after
+  it was accepted (`LIMITS.deploymentReconcileMinutes`; one that is executing waits for
+  `LIMITS.deploymentWorkflowTimeoutMinutes`). A lost Workflow start is started again under the
+  same ID; one that never ran any SQL is marked failed; one that started executing and whose
+  Workflow ended is marked failed with `code: "outcome_unknown"` and `requiresInspection: true`.
+  None is ever marked succeeded.
+- **`requiresInspection: true`** (in the deployment's log): check the target database by hand.
+  `SELECT version_number, revision, deployment_id, applied_at FROM "_dbcenter"."version";`
+  shows what was applied last. If `deployment_id` is this execution's ID, its transaction
+  committed: compare the database with the design (statements after `COMMIT`, such as
+  `CREATE INDEX CONCURRENTLY`, may be missing; the log's `lastStep` shows how far it got).
+  Otherwise the transaction was rolled back. Fix the database by hand, then start a new
+  deployment from the app: its pre-checks refuse a database that doesn't match.
+- **Orphaned R2 objects** (SQL whose deployment is gone from D1) aren't expected: a deployment's
+  row is written before its objects, and a purge deletes the objects before the rows (an
+  interrupted purge leaves rows without objects, which the next run finishes). If one turns up,
+  check that no `deployments` row has its ID, then delete both keys, e.g.
+  `vp exec wrangler r2 object delete <bucket>/deployments/<id>.sql --remote`.
 
 - Regenerate Workers binding types:
 
