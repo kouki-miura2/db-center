@@ -24,6 +24,11 @@ import {
   type DefinitionExportService,
 } from './service/definition-export.service.ts'
 import { objectInputSchema } from './service/definition.ts'
+import {
+  deploymentPreviewSchema,
+  deploymentRequestSchema,
+  type DeploymentService,
+} from './service/deployment.service.ts'
 import type { InspectionService } from './service/inspection.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
@@ -88,6 +93,7 @@ export interface AppDependencies {
   scriptService: ScriptService
   definitionExportService: DefinitionExportService
   inspectionService: InspectionService
+  deploymentService: DeploymentService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -767,6 +773,33 @@ export const createApp = (deps: AppDependencies) => {
               ...c.req.valid('param'),
               ...c.req.valid('json'),
             }),
+          ),
+      )
+      .post(
+        '/connections/:connectionId/deployment-preview',
+        validate('param', z.strictObject({ connectionId: z.uuid() })),
+        validate('json', deploymentPreviewSchema),
+        async (c) =>
+          c.json(
+            await deps.deploymentService.preview({
+              ...c.req.valid('json'),
+              ...c.req.valid('param'),
+              userId: requireUser(c).id,
+            }),
+          ),
+      )
+      .post(
+        '/connections/:connectionId/deployments',
+        validate('param', z.strictObject({ connectionId: z.uuid() })),
+        validate('json', deploymentRequestSchema),
+        async (c) =>
+          c.json(
+            await deps.deploymentService.accept({
+              ...c.req.valid('json'),
+              ...c.req.valid('param'),
+              userId: requireUser(c).id,
+            }),
+            202,
           ),
       )
       .post(

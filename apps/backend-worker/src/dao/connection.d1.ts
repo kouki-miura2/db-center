@@ -78,7 +78,7 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
       actorHasRole(db, input.productId, input.userId, input.allowedRoles),
       db
         .prepare(
-          'UPDATE connections SET name = ?, connection_string = ?, password_encrypted = CASE WHEN ? THEN password_encrypted ELSE ? END, updated_at = max(?, updated_at + 1) WHERE id = ? AND product_id = ? AND updated_at = ? RETURNING *',
+          "UPDATE connections SET name = ?, connection_string = ?, password_encrypted = CASE WHEN ? THEN password_encrypted ELSE ? END, updated_at = max(?, updated_at + 1) WHERE id = ? AND product_id = ? AND updated_at = ? AND NOT EXISTS(SELECT 1 FROM deployments WHERE connection_id=connections.id AND status='running') RETURNING *",
         )
         .bind(
           input.name,
@@ -105,7 +105,9 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
       actorHasRole(db, productId, userId, allowedRoles),
       // deployments.connection_id is set to NULL by its foreign key; connection_name stays.
       db
-        .prepare('DELETE FROM connections WHERE id = ? AND product_id = ? AND updated_at = ?')
+        .prepare(
+          "DELETE FROM connections WHERE id = ? AND product_id = ? AND updated_at = ? AND NOT EXISTS(SELECT 1 FROM deployments WHERE connection_id=connections.id AND status='running')",
+        )
         .bind(connectionId, productId, expectedUpdatedAt),
       staleGuard(db),
       bumpProductRevision(db, productId),

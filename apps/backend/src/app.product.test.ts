@@ -31,6 +31,7 @@ import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
 import { createDefinitionExportService } from './service/definition-export.service.ts'
 import type { TableDefinition } from './service/definition.ts'
+import type { DeploymentService } from './service/deployment.service.ts'
 import { createInspectionService } from './service/inspection.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
@@ -74,6 +75,7 @@ beforeEach(() => {
   const products = createProductRepository(createProductMemoryDao(db))
   const secrets = createAesGcmSecretBox(btoa('k'.repeat(32)))
   app = createApp({
+    deploymentService: {} as DeploymentService,
     inspectionService: createInspectionService({
       products,
       connections: createConnectionRepository(createConnectionMemoryDao(db)),

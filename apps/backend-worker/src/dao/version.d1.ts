@@ -128,9 +128,10 @@ export const createVersionD1Dao = (db: D1Database): VersionDao => ({
       guard(
         db,
         'stale_update',
-        "EXISTS (SELECT 1 FROM deployments WHERE to_version_id = ? AND (status = 'running' OR (? AND status = 'succeeded')))",
+        "EXISTS (SELECT 1 FROM deployments WHERE (to_version_id = ? AND (status = 'running' OR (? AND status = 'succeeded'))) OR (from_version_id = ? AND status = 'running'))",
         c.version.id,
         input.to === 'editing' && !input.acknowledgeApplied ? 1 : 0,
+        c.version.id,
       ),
       db
         .prepare(

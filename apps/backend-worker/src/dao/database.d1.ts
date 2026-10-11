@@ -7,6 +7,7 @@ import type {
 } from 'backend/src/dao/database.interface.ts'
 
 import { guard, insertAuditLog, limitGuard, runBatch, staleGuard } from './batch.ts'
+import { selectDeployments, toDeploymentRecord } from './deployment.d1.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
 interface DatabaseRow {
@@ -136,9 +137,10 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
 
   findScope: async (productId, databaseId) => {
     // One batch is one transaction, so the versions match the database's revision.
-    const [database, versions] = await db.batch([
+    const [database, versions, deployments] = await db.batch([
       db.prepare(ACTIVE_DATABASE).bind(databaseId, productId),
       db.prepare('SELECT * FROM versions WHERE database_id = ?').bind(databaseId),
+      selectDeployments(db, databaseId),
     ])
     const row = database?.results[0] as
       | (DatabaseRow & { common_columns: string | null })
@@ -148,6 +150,9 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
       database: toDatabaseRecord(row),
       commonColumns: row.common_columns,
       versions: ((versions?.results ?? []) as VersionRow[]).map(toVersionRecord),
+      deployments: ((deployments?.results ?? []) as Record<string, unknown>[]).map(
+        toDeploymentRecord,
+      ),
     }
   },
 
@@ -253,7 +258,7 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
       actorHasRole(db, input.productId, input.userId, input.allowedRoles),
       db
         .prepare(
-          'UPDATE databases SET name = ?, description = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND product_id = ? AND updated_at = ? AND deleted_at IS NULL RETURNING *',
+          "UPDATE databases SET name = ?, description = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND product_id = ? AND updated_at = ? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM deployments WHERE database_id=databases.id AND status='running') RETURNING *",
         )
         .bind(
           input.name,
@@ -299,7 +304,7 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
       actorHasRole(db, productId, userId, allowedRoles),
       db
         .prepare(
-          'UPDATE databases SET deleted_at = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND product_id = ? AND updated_at = ? AND deleted_at IS NULL',
+          "UPDATE databases SET deleted_at = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND product_id = ? AND updated_at = ? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM deployments WHERE database_id=databases.id AND status='running')",
         )
         .bind(now, now, databaseId, productId, expectedUpdatedAt),
       staleGuard(db),

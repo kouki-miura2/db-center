@@ -9,7 +9,12 @@ import { nextUpdatedAt } from './write.ts'
 type DeploymentRow = ApplicationRecord & { toVersionId: string }
 export const memoryApplications = (db: MemoryDb, id: string) =>
   [...memoryTable<DeploymentRow>(db, 'deployments').values()]
-    .filter((v) => v.toVersionId === id)
+    .filter(
+      (v) =>
+        v.toVersionId === id ||
+        ((v as DeploymentRow & { fromVersionId?: string }).fromVersionId === id &&
+          v.status === 'running'),
+    )
     .map(({ id, connectionName, status }) => ({ id, connectionName, status }))
 const current = (db: MemoryDb, input: VersionWrite) => {
   const c = memoryVersionContext(db, input.context.version.id)

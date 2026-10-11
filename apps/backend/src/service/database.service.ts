@@ -53,10 +53,12 @@ export interface VersionView {
  * The database scope ("参照 > データの取得とキャッシュ": データベース): the database, its common
  * column set and every version, newest first. Deployments join it with automatic deployment.
  */
+import { deploymentView } from '../repository/deployment.repository.ts'
 export interface DatabaseScopeView {
   database: DatabaseView
   commonColumns: Column[]
   versions: VersionView[]
+  deployments: ReturnType<typeof deploymentView>[]
 }
 
 export interface DatabaseService {
@@ -219,6 +221,7 @@ export const createDatabaseService = (deps: {
           // Validated when saved.
           commonColumns: scope.commonColumns as Column[],
           versions: scope.versions.toSorted((a, b) => b.number - a.number).map(toVersionView),
+          deployments: (scope.deployments ?? []).map(deploymentView),
         },
       }
     },

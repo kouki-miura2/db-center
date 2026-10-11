@@ -103,6 +103,7 @@ test('maps the database scope, parsing the common column set', async () => {
   expect(await repository.findScope('p1', 'd1')).toEqual({
     database,
     commonColumns: [],
+    deployments: [],
     versions: [],
   })
   expect((await repository.findScope('p1', 'd2'))?.commonColumns).toEqual([{ name: 'created_at' }])

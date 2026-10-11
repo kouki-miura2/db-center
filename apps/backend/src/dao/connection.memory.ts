@@ -1,5 +1,6 @@
 import { AppError } from '../error.ts'
 import type { ConnectionDao, ConnectionRecord } from './connection.interface.ts'
+import type { DeploymentRecord } from './deployment.interface.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import type { ProductRecord } from './product.interface.ts'
 import { assertActorRole, bumpProductRevision } from './product.memory.ts'
@@ -47,6 +48,12 @@ export const createConnectionMemoryDao = (db: MemoryDb): ConnectionDao => ({
         input.expectedUpdatedAt,
       )
       row.name = input.name
+      if (
+        [...memoryTable<DeploymentRecord>(db, 'deployments').values()].some(
+          (v) => v.connectionId === row.id && v.status === 'running',
+        )
+      )
+        throw new AppError('invalid_state')
       row.connectionString = input.connectionString
       if (input.passwordEncrypted !== undefined) row.passwordEncrypted = input.passwordEncrypted
       row.updatedAt = nextUpdatedAt(input.now, row.updatedAt)
@@ -60,6 +67,18 @@ export const createConnectionMemoryDao = (db: MemoryDb): ConnectionDao => ({
       assertActorRole(db, productId, userId, allowedRoles)
       assertCurrent(inProduct(db, productId, connectionId), expectedUpdatedAt)
       connections(db).delete(connectionId)
+      const history = memoryTable<DeploymentRecord>(db, 'deployments')
+      if (
+        [...history.values()].some((v) => v.connectionId === connectionId && v.status === 'running')
+      )
+        throw new AppError('invalid_state')
+      history.forEach((v) => {
+        if (v.connectionId === connectionId) {
+          v.connectionId = null
+          const database = memoryTable<{ revision: number }>(db, 'databases').get(v.databaseId)
+          if (database) database.revision++
+        }
+      })
       const productRevision = bumpProductRevision(db, productId)
       appendAuditLog(db, audit)
       return { productRevision }

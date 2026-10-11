@@ -278,6 +278,7 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
     expect(await f.dao.findScope('p1', 'd1')).toEqual({
       database: database('d1'),
       commonColumns: null,
+      deployments: [],
       versions: [
         {
           id: 'v-d1',

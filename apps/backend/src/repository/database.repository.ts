@@ -18,11 +18,13 @@ export interface Database {
 
 export type Version = VersionRecord
 
+import type { DeploymentRecord } from '../dao/deployment.interface.ts'
 export interface DatabaseScope {
   database: Database
   /** The common column set, in order; empty if none is defined. */
   commonColumns: unknown[]
   versions: Version[]
+  deployments?: DeploymentRecord[]
 }
 
 export type DatabaseSummary = Omit<DatabaseSummaryRecord, 'database'> & { database: Database }
@@ -75,6 +77,7 @@ export const createDatabaseRepository = (dao: DatabaseDao): DatabaseRepository =
           commonColumns:
             scope.commonColumns === null ? [] : (JSON.parse(scope.commonColumns) as unknown[]),
           versions: scope.versions,
+          deployments: scope.deployments ?? [],
         }
       : null
   },

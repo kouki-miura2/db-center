@@ -1,0 +1,107 @@
+import { AppError } from '../error.ts'
+import type { ConnectionRecord } from './connection.interface.ts'
+import type { DatabaseRecord, VersionRecord } from './database.interface.ts'
+import type { DeploymentDao, DeploymentRecord } from './deployment.interface.ts'
+import { atomic, memoryTable, appendAuditLog, type MemoryDb } from './memory-db.ts'
+import { assertActorRole, bumpProductRevision } from './product.memory.ts'
+
+export const memoryDeployments = (db: MemoryDb, databaseId: string) =>
+  [...memoryTable<DeploymentRecord>(db, 'deployments').values()]
+    .filter((v) => v.databaseId === databaseId)
+    .toSorted((a, b) => b.startedAt - a.startedAt || b.id.localeCompare(a.id))
+    .map((v) => ({ ...v }))
+export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
+  const rows = () => memoryTable<DeploymentRecord>(db, 'deployments')
+  const transition = async (
+    id: string,
+    from: DeploymentRecord['phase'],
+    to: DeploymentRecord['phase'],
+  ) =>
+    atomic(db, () => {
+      const r = rows().get(id)
+      if (!r || r.status !== 'running' || r.phase !== from) return false
+      r.phase = to
+      return true
+    })
+  return {
+    findById: async (id) => {
+      const r = rows().get(id)
+      return r ? { ...r } : null
+    },
+    findByKey: async (id, key) => {
+      const r = [...rows().values()].find((v) => v.connectionId === id && v.idempotencyKey === key)
+      return r ? { ...r } : null
+    },
+    list: async (id) => memoryDeployments(db, id),
+    accept: async ({ record: r, userId, allowedRoles, connectionUpdatedAt, audit }) =>
+      atomic(db, () => {
+        assertActorRole(db, r.productId, userId, allowedRoles)
+        const conn = memoryTable<ConnectionRecord>(db, 'connections').get(r.connectionId!)
+        const database = memoryTable<DatabaseRecord>(db, 'databases').get(r.databaseId)
+        const versions = memoryTable<VersionRecord>(db, 'versions'),
+          target = versions.get(r.toVersionId),
+          source = r.fromVersionId ? versions.get(r.fromVersionId) : null
+        if (
+          !conn ||
+          conn.productId !== r.productId ||
+          conn.updatedAt !== connectionUpdatedAt ||
+          !database ||
+          database.productId !== r.productId ||
+          database.deletedAt !== null ||
+          !target ||
+          target.databaseId !== r.databaseId ||
+          target.status === 'editing' ||
+          target.revision !== r.targetRevision ||
+          (r.fromVersionId &&
+            (!source ||
+              source.databaseId !== r.databaseId ||
+              source.status === 'editing' ||
+              source.revision !== r.sourceRevision))
+        )
+          throw new AppError('stale_update')
+        if (
+          [...rows().values()].some(
+            (v) =>
+              v.connectionId === r.connectionId &&
+              (v.status === 'running' || v.idempotencyKey === r.idempotencyKey),
+          )
+        )
+          throw new AppError('duplicate')
+        rows().set(r.id, { ...r })
+        database.revision++
+        bumpProductRevision(db, r.productId)
+        appendAuditLog(db, audit)
+      }),
+    queue: (id) => transition(id, 'preparing', 'queued'),
+    claim: (id) => transition(id, 'queued', 'executing'),
+    progress: async (id, count, log) =>
+      atomic(db, () => {
+        const r = rows().get(id)
+        if (r?.status === 'running' && r.phase === 'executing' && count >= r.executedCount) {
+          r.executedCount = count
+          r.log = log
+        }
+      }),
+    finish: async (id, status, log, now) =>
+      atomic(db, () => {
+        const r = rows().get(id)
+        if (!r || r.status !== 'running') return
+        r.status = status
+        r.phase = 'finished'
+        r.log = log
+        r.finishedAt = now
+        const database = memoryTable<DatabaseRecord>(db, 'databases').get(r.databaseId)
+        if (database) database.revision++
+        bumpProductRevision(db, r.productId)
+        appendAuditLog(db, {
+          id: crypto.randomUUID(),
+          productId: r.productId,
+          userId: r.executedBy,
+          targetType: 'deployment',
+          action: status,
+          summary: r.connectionName,
+          createdAt: now,
+        })
+      }),
+  }
+}

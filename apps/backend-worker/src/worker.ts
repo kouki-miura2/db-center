@@ -3,6 +3,7 @@ import { createAuditLogRepository } from 'backend/src/repository/audit-log.repos
 import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.session.ts'
 import { createConnectionRepository } from 'backend/src/repository/connection.repository.ts'
 import { createDatabaseRepository } from 'backend/src/repository/database.repository.ts'
+import { createDeploymentRepository } from 'backend/src/repository/deployment.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createInvitationRepository } from 'backend/src/repository/invitation.repository.ts'
 import { createMemberRepository } from 'backend/src/repository/member.repository.ts'
@@ -17,6 +18,7 @@ import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createDatabaseService } from 'backend/src/service/database.service.ts'
 import { createDefinitionExportService } from 'backend/src/service/definition-export.service.ts'
+import { createDeploymentService } from 'backend/src/service/deployment.service.ts'
 import { createInspectionService } from 'backend/src/service/inspection.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
@@ -31,6 +33,7 @@ import sqliteWasm from 'sql.js/dist/sql-wasm.wasm'
 import { createAuditLogD1Dao } from './dao/audit-log.d1.ts'
 import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createDatabaseD1Dao } from './dao/database.d1.ts'
+import { createDeploymentD1Dao } from './dao/deployment.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
 import { createMemberD1Dao } from './dao/member.d1.ts'
 import { createObjectD1Dao } from './dao/object.d1.ts'
@@ -38,6 +41,7 @@ import { createProductD1Dao } from './dao/product.d1.ts'
 import { createRevisionD1Dao } from './dao/revision.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
 import { createVersionD1Dao } from './dao/version.d1.ts'
+import { createDeploymentStorage, createDeploymentWorkflow } from './deployment-runtime.ts'
 import { createPostgresAdapter } from './postgres.ts'
 import { createSqlValidator } from './sql-validator.ts'
 
@@ -50,10 +54,12 @@ import { createSqlValidator } from './sql-validator.ts'
  * - `DEV_LOGIN`: `"true"` only in the untracked `.dev.vars`, for local development. Turns on the
  *   development login and the http session cookie. Never set it for a deployed Worker.
  */
-interface WorkerEnv extends Env {
+export interface WorkerEnv extends Env {
   GOOGLE_CLIENT_ID?: string
   ENCRYPTION_KEY?: string
   DEV_LOGIN?: string
+  DEPLOYMENT_SQL?: R2Bucket
+  DEPLOYMENT_WORKFLOW?: Workflow<{ deploymentId: string }>
 }
 
 const buildApp = (env: WorkerEnv) => {
@@ -71,7 +77,26 @@ const buildApp = (env: WorkerEnv) => {
   const objects = createObjectRepository(createObjectD1Dao(env.DB))
   const sql = createSqlValidator({ pg: pgWasm, sqlite: sqliteWasm })
   const secrets = createAesGcmSecretBox(env.ENCRYPTION_KEY || undefined)
+  const connections = createConnectionRepository(createConnectionD1Dao(env.DB))
+  const inspection = createInspectionService({
+    products,
+    connections,
+    secrets,
+    postgres: createPostgresAdapter(),
+  })
   return createApp({
+    deploymentService: createDeploymentService({
+      products,
+      connections,
+      objects,
+      sql,
+      inspection,
+      deployments: createDeploymentRepository(createDeploymentD1Dao(env.DB)),
+      storage: env.DEPLOYMENT_SQL ? createDeploymentStorage(env.DEPLOYMENT_SQL) : undefined,
+      workflow: env.DEPLOYMENT_WORKFLOW
+        ? createDeploymentWorkflow(env.DEPLOYMENT_WORKFLOW)
+        : undefined,
+    }),
     authService: createAuthService({
       verifier: createGoogleIdTokenVerifier({ clientId: env.GOOGLE_CLIENT_ID || undefined }),
       users: createUserRepository(users),

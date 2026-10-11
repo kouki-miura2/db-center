@@ -196,7 +196,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
       actorHasRole(db, productId, userId, allowedRoles),
       db
         .prepare(
-          'UPDATE products SET name = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL RETURNING *',
+          "UPDATE products SET name = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM deployments WHERE product_id=products.id AND status='running') RETURNING *",
         )
         .bind(name, now, productId, expectedUpdatedAt),
       staleGuard(db),
@@ -215,7 +215,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
       actorHasRole(db, productId, userId, allowedRoles),
       db
         .prepare(
-          'UPDATE products SET deleted_at = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL',
+          "UPDATE products SET deleted_at = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM deployments WHERE product_id=products.id AND status='running')",
         )
         .bind(now, now, productId, expectedUpdatedAt),
       staleGuard(db),

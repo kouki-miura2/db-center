@@ -7,6 +7,7 @@ import type {
   DatabaseSummaryRecord,
   VersionRecord,
 } from './database.interface.ts'
+import { memoryDeployments } from './deployment.memory.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import type { ObjectRecord } from './object.interface.ts'
 import { assertActorRole, bumpProductRevision } from './product.memory.ts'
@@ -91,6 +92,7 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
     return {
       database: toRecord(row),
       commonColumns: row.commonColumns,
+      deployments: memoryDeployments(db, databaseId),
       versions: [...versions(db).values()]
         .filter((version) => version.databaseId === databaseId)
         .map((version) => ({ ...version })),
@@ -193,6 +195,8 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
     atomic(db, () => {
       assertActorRole(db, productId, userId, allowedRoles)
       const row = assertCurrent(inProduct(db, productId, databaseId), expectedUpdatedAt)
+      if (memoryDeployments(db, databaseId).some((v) => v.status === 'running'))
+        throw new AppError('invalid_state')
       row.deletedAt = now
       row.updatedAt = nextUpdatedAt(now, row.updatedAt)
       row.revision += 1

@@ -1,0 +1,14 @@
+ALTER TABLE deployments ADD COLUMN product_id TEXT REFERENCES products(id);
+ALTER TABLE deployments ADD COLUMN database_id TEXT REFERENCES databases(id);
+ALTER TABLE deployments ADD COLUMN phase TEXT NOT NULL DEFAULT 'finished' CHECK(phase IN ('preparing','queued','executing','finished'));
+ALTER TABLE deployments ADD COLUMN idempotency_key TEXT;
+ALTER TABLE deployments ADD COLUMN request_hash TEXT;
+ALTER TABLE deployments ADD COLUMN plan_hash TEXT;
+ALTER TABLE deployments ADD COLUMN connection_snapshot TEXT;
+ALTER TABLE deployments ADD COLUMN target_revision INTEGER;
+ALTER TABLE deployments ADD COLUMN source_revision INTEGER;
+ALTER TABLE deployments ADD COLUMN executed_count INTEGER NOT NULL DEFAULT 0;
+UPDATE deployments SET database_id=(SELECT database_id FROM versions WHERE id=to_version_id);
+UPDATE deployments SET product_id=(SELECT product_id FROM databases WHERE id=database_id);
+CREATE UNIQUE INDEX deployments_idempotency ON deployments(connection_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX deployments_database_started ON deployments(database_id,started_at,id);

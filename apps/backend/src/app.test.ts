@@ -69,6 +69,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
     scriptService: { ddl: unused, migration: unused },
     definitionExportService: { export: unused },
     inspectionService: { inspect: unused },
+    deploymentService: { preview: unused, accept: unused },
     versionService: {
       validate: unused,
       provisional: unused,

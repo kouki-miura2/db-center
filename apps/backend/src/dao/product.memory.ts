@@ -167,6 +167,12 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
       assertActorRole(db, productId, userId, allowedRoles)
       const product = assertCurrent(activeProduct(db, productId), expectedUpdatedAt)
       product.deletedAt = now
+      if (
+        [...memoryTable<{ productId: string; status: string }>(db, 'deployments').values()].some(
+          (v) => v.productId === productId && v.status === 'running',
+        )
+      )
+        throw new AppError('invalid_state')
       product.updatedAt = nextUpdatedAt(now, product.updatedAt)
       product.revision += 1
       let productsRevision = 0

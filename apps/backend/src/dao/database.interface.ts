@@ -1,4 +1,5 @@
 import type { AuditLogRecord } from './audit-log.interface.ts'
+import type { DeploymentRecord } from './deployment.interface.ts'
 import type { Role } from './product.interface.ts'
 
 export type VersionStatus = 'editing' | 'provisional' | 'final'
@@ -39,6 +40,7 @@ export interface DatabaseScopeRecord {
   database: DatabaseRecord
   commonColumns: string | null
   versions: VersionRecord[]
+  deployments?: DeploymentRecord[]
 }
 
 /**
