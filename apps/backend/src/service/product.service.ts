@@ -11,6 +11,7 @@ import type {
   ProductRepository,
 } from '../repository/product.repository.ts'
 import { type ConnectionView, toConnectionView } from './connection.service.ts'
+import { type DatabaseListItemView, toDatabaseListItem } from './database.service.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
 
 /** One row of the product list ("参照 > データの取得とキャッシュ": プロダクト一覧). */
@@ -41,8 +42,8 @@ export interface MemberView {
 }
 
 /**
- * The product scope ("参照 > データの取得とキャッシュ": プロダクト): the product, the caller's role
- * and the members. Connections, invitations and databases join it as they're built.
+ * The product scope ("参照 > データの取得とキャッシュ": プロダクト): the product, the caller's role,
+ * the members, connections, pending invitations and databases.
  */
 export interface ProductScopeView {
   product: ProductView
@@ -52,6 +53,8 @@ export interface ProductScopeView {
   connections: ConnectionView[]
   /** Pending members (仮登録) whose invitation is still valid, by email. */
   invitations: PendingInvitation[]
+  /** By name ("各論 > データベース > 一覧"). */
+  databases: DatabaseListItemView[]
 }
 
 /** A cacheable scope: unchanged when the client's revision is current, otherwise all of it. */
@@ -193,6 +196,9 @@ export const createProductService = (deps: { products: ProductRepository }): Pro
         invitations: scope.invitations
           .filter((invitation) => invitation.expiresAt > Date.now())
           .toSorted((a, b) => a.email.localeCompare(b.email)),
+        databases: scope.databases
+          .map(toDatabaseListItem)
+          .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
       },
     }
   },

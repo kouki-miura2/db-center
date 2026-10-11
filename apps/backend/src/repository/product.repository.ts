@@ -7,6 +7,7 @@ import type {
   Role,
 } from '../dao/product.interface.ts'
 import { type Connection, toConnection } from './connection.repository.ts'
+import { type DatabaseSummary, toDatabaseSummary } from './database.repository.ts'
 import { type PendingInvitation, toPendingInvitation } from './invitation.repository.ts'
 
 /** A product that isn't deleted, as the services see it. */
@@ -34,6 +35,7 @@ export interface ProductRepository {
     members: Member[]
     connections: Connection[]
     invitations: PendingInvitation[]
+    databases: DatabaseSummary[]
   } | null>
   findProductsRevision: (userId: string) => Promise<number | null>
   listForUser: (userId: string) => Promise<{ revision: number; memberships: Membership[] }>
@@ -83,6 +85,7 @@ export const createProductRepository = (dao: ProductDao): ProductRepository => (
           members: scope.members,
           connections: scope.connections.map(toConnection),
           invitations: scope.invitations.map(toPendingInvitation),
+          databases: scope.databases.map(toDatabaseSummary),
         }
       : null
   },

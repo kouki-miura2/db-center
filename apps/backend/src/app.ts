@@ -1,7 +1,14 @@
 import { type Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { csrf } from 'hono/csrf'
-import { createLogger, LIMITS, TARGETS, type Target, TERMS_VERSION } from 'utils'
+import {
+  createLogger,
+  DATABASE_NAME_PATTERN,
+  LIMITS,
+  TARGETS,
+  type Target,
+  TERMS_VERSION,
+} from 'utils'
 import { z } from 'zod'
 
 import { AppError, errorResponse } from './error.ts'
@@ -9,6 +16,7 @@ import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.inter
 import type { AuditLogService } from './service/audit-log.service.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import type { ConnectionService } from './service/connection.service.ts'
+import type { DatabaseService } from './service/database.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
 import type { ProductService } from './service/product.service.ts'
@@ -61,6 +69,7 @@ export interface AppDependencies {
   connectionService: ConnectionService
   invitationService: InvitationService
   memberService: MemberService
+  databaseService: DatabaseService
   auditLogService: AuditLogService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
@@ -82,6 +91,18 @@ const target = z.enum(Object.keys(TARGETS) as [Target, ...Target[]])
 const expectedUpdatedAt = z.number().int().nonnegative()
 const connectionParams = z.object({ productId: z.uuid(), connectionId: z.uuid() })
 const memberParams = z.object({ productId: z.uuid(), userId: z.uuid() })
+const databaseParams = z.object({ productId: z.uuid(), databaseId: z.uuid() })
+const databaseFields = {
+  name: z
+    .string()
+    .regex(
+      DATABASE_NAME_PATTERN,
+      '英小文字で始まる英小文字・数字・_ の63文字以内で入力してください',
+    ),
+  description: text(LIMITS.databaseDescriptionMaxLength),
+}
+/** The deletion confirmation: the target's name typed again ("総論 > 共通ルール > 削除"). */
+const confirmationName = z.string().max(200)
 const connectionFields = {
   name: text(LIMITS.connectionNameMaxLength).min(1),
   connectionString: text(LIMITS.connectionStringMaxLength).min(1),
@@ -311,10 +332,7 @@ export const createApp = (deps: AppDependencies) => {
       .delete(
         '/products/:productId',
         validate('param', productId),
-        validate(
-          'json',
-          z.strictObject({ confirmationName: z.string().max(200), expectedUpdatedAt }),
-        ),
+        validate('json', z.strictObject({ confirmationName, expectedUpdatedAt })),
         async (c) => {
           const user = requireUser(c)
           return c.json(
@@ -490,6 +508,58 @@ export const createApp = (deps: AppDependencies) => {
           }),
         )
       })
+      // Databases of a product (create, rename, delete: owner, manager).
+      .post(
+        '/products/:productId/databases',
+        validate('param', productId),
+        validate(
+          'json',
+          z.strictObject({ ...databaseFields, description: databaseFields.description.optional() }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          const { name, description } = c.req.valid('json')
+          return c.json(
+            await deps.databaseService.createDatabase({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              name,
+              description: description ?? '',
+            }),
+          )
+        },
+      )
+      // Replaces the name and description; an empty description removes it.
+      .patch(
+        '/products/:productId/databases/:databaseId',
+        validate('param', databaseParams),
+        validate('json', z.strictObject({ ...databaseFields, expectedUpdatedAt })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.databaseService.updateDatabase({
+              userId: user.id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      .delete(
+        '/products/:productId/databases/:databaseId',
+        validate('param', databaseParams),
+        validate('json', z.strictObject({ confirmationName, expectedUpdatedAt })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.databaseService.deleteDatabase({
+              userId: user.id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
       // The audit log, newest first: `before` pages back, `after` gets what's new since.
       .get(
         '/products/:productId/audit-logs',

@@ -2,6 +2,7 @@ import type { Target } from 'utils'
 
 import type { AuditLogRecord } from './audit-log.interface.ts'
 import type { ConnectionRecord } from './connection.interface.ts'
+import type { DatabaseSummaryRecord } from './database.interface.ts'
 import type { InvitationRecord } from './invitation.interface.ts'
 
 export type Role = 'owner' | 'manager' | 'member'
@@ -38,13 +39,15 @@ export interface ProductScopeRecord {
   connections: ConnectionRecord[]
   /** Every invitation row, expired ones included until they're cleaned up. */
   invitations: InvitationRecord[]
+  /** Databases that aren't deleted. */
+  databases: DatabaseSummaryRecord[]
 }
 
 export interface ProductDao {
   /** The user's membership of the product, or null if they aren't a member or it's deleted. */
   findMembership: (productId: string, userId: string) => Promise<MembershipRecord | null>
   /**
-   * The product scope: the product, its members and connections, read together so they match its
+   * The product scope: the product, its members, connections, invitations and databases, read together so they match its
    * revision. Null if the product is deleted or doesn't exist.
    */
   findScope: (productId: string) => Promise<ProductScopeRecord | null>

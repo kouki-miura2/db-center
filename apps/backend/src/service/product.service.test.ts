@@ -27,6 +27,16 @@ const fakeProducts = (overrides: Partial<ProductRepository> = {}): ProductReposi
   ...overrides,
 })
 
+const database = {
+  id: 'd1',
+  productId: 'p1',
+  name: 'api',
+  description: null,
+  createdAt: 1,
+  updatedAt: 2,
+  revision: 3,
+}
+
 const membership = (role: Membership['role'], overrides: Partial<Product> = {}): Membership => ({
   product: product(overrides),
   role,
@@ -191,6 +201,30 @@ test('returns the whole product scope: role, members by role and name, valid inv
             createdAt: 1,
           },
         ],
+        databases: [
+          {
+            database: { ...database, id: 'd2', name: 'web' },
+            latestVersion: {
+              id: 'v3',
+              number: 3,
+              status: 'provisional',
+              schemaCount: 2,
+              tableCount: 5,
+            },
+            latestFinalVersion: { id: 'v2', number: 2 },
+          },
+          {
+            database,
+            latestVersion: {
+              id: 'v1',
+              number: 1,
+              status: 'editing',
+              schemaCount: 1,
+              tableCount: 0,
+            },
+            latestFinalVersion: null,
+          },
+        ],
       }),
     }),
   })
@@ -204,6 +238,31 @@ test('returns the whole product scope: role, members by role and name, valid inv
   expect(result.data.members.map((m) => m.userId)).toEqual(['u1', 'u2', 'u4', 'u3'])
   // Valid invitations only, by email.
   expect(result.data.invitations.map((i) => i.id)).toEqual(['i1', 'i2'])
+  // Databases by name, with their versions and the latest version's counts.
+  expect(result.data.databases).toEqual([
+    {
+      id: 'd1',
+      name: 'api',
+      description: null,
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersion: { id: 'v1', number: 1, status: 'editing' },
+      latestFinalVersion: null,
+      schemaCount: 1,
+      tableCount: 0,
+    },
+    {
+      id: 'd2',
+      name: 'web',
+      description: null,
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersion: { id: 'v3', number: 3, status: 'provisional' },
+      latestFinalVersion: { id: 'v2', number: 2 },
+      schemaCount: 2,
+      tableCount: 5,
+    },
+  ])
 })
 
 test('hides the product scope from a non-member', async () => {

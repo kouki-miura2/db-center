@@ -2,6 +2,7 @@ import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from 'backend/src/app.ts'
 import { createAuditLogRepository } from 'backend/src/repository/audit-log.repository.ts'
 import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.session.ts'
 import { createConnectionRepository } from 'backend/src/repository/connection.repository.ts'
+import { createDatabaseRepository } from 'backend/src/repository/database.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createInvitationRepository } from 'backend/src/repository/invitation.repository.ts'
 import { createMemberRepository } from 'backend/src/repository/member.repository.ts'
@@ -11,12 +12,14 @@ import { createUserRepository } from 'backend/src/repository/user.repository.ts'
 import { createAuditLogService } from 'backend/src/service/audit-log.service.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
+import { createDatabaseService } from 'backend/src/service/database.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 
 import { createAuditLogD1Dao } from './dao/audit-log.d1.ts'
 import { createConnectionD1Dao } from './dao/connection.d1.ts'
+import { createDatabaseD1Dao } from './dao/database.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
 import { createMemberD1Dao } from './dao/member.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
@@ -62,6 +65,10 @@ const buildApp = (env: WorkerEnv) => {
     memberService: createMemberService({
       products,
       members: createMemberRepository(createMemberD1Dao(env.DB)),
+    }),
+    databaseService: createDatabaseService({
+      products,
+      databases: createDatabaseRepository(createDatabaseD1Dao(env.DB)),
     }),
     auditLogService: createAuditLogService({
       products,

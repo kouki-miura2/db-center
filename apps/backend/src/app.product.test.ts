@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test } from 'vite-plus/test'
 import { createApp, SESSION_COOKIE } from './app.ts'
 import { createAuditLogMemoryDao } from './dao/audit-log.memory.ts'
 import { createConnectionMemoryDao } from './dao/connection.memory.ts'
+import { createDatabaseMemoryDao } from './dao/database.memory.ts'
 import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
@@ -12,6 +13,7 @@ import type { UserRecord } from './dao/user.interface.ts'
 import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
+import { createDatabaseRepository } from './repository/database.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createMemberRepository } from './repository/member.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
@@ -19,6 +21,7 @@ import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
 import { createAuditLogService } from './service/audit-log.service.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
+import { createDatabaseService } from './service/database.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
 import { createProductService } from './service/product.service.ts'
@@ -72,6 +75,10 @@ beforeEach(() => {
     memberService: createMemberService({
       products,
       members: createMemberRepository(createMemberMemoryDao(db)),
+    }),
+    databaseService: createDatabaseService({
+      products,
+      databases: createDatabaseRepository(createDatabaseMemoryDao(db)),
     }),
     auditLogService: createAuditLogService({
       products,
@@ -610,5 +617,172 @@ describe('audit log', () => {
     ).json()
     expect(nothingNew.entries).toEqual([])
     expect((await app.request(`/api/products/${id}/audit-logs`, as('u3'))).status).toBe(404)
+  })
+})
+
+describe('databases', () => {
+  const arrange = async (target = 'postgresql18') => {
+    const { body } = await createProduct('u1', 'shop', target)
+    addMember(body.product.id, 'u2', 'member')
+    return body.product.id as string
+  }
+  const createDatabase = (productId: string, body: unknown, userId = 'u1') =>
+    app.request(`/api/products/${productId}/databases`, as(userId, 'POST', body))
+  const scope = async (productId: string, userId = 'u1') =>
+    (await app.request(`/api/products/${productId}`, as(userId))).json()
+
+  test('creates an empty database listed in the product scope, bumping its revision', async () => {
+    const productId = await arrange()
+
+    const res = await createDatabase(productId, { name: 'ec_main', description: '基幹' })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      database: {
+        name: 'ec_main',
+        description: '基幹',
+        latestVersion: { number: 1, status: 'editing' },
+        latestFinalVersion: null,
+        schemaCount: 1,
+        tableCount: 0,
+      },
+      revisions: { product: 2 },
+    })
+    const product = await scope(productId, 'u2')
+    expect(product).toMatchObject({ revision: 2, data: { databases: [body.database] } })
+    expect(memoryTable(db, 'objects').size).toBe(1)
+  })
+
+  test('lists databases by name; SQLite 3 starts without a schema', async () => {
+    const productId = await arrange('sqlite3')
+    await createDatabase(productId, { name: 'zeta' })
+    await createDatabase(productId, { name: 'alpha' })
+
+    const { data } = await scope(productId)
+
+    expect(data.databases.map((d: { name: string }) => d.name)).toEqual(['alpha', 'zeta'])
+    expect(data.databases[0]).toMatchObject({ description: null, schemaCount: 0 })
+  })
+
+  test.each(['', 'Ec', '1db', 'ec-main', 'a'.repeat(64)])(
+    'refuses the database name %j',
+    async (name) => {
+      const productId = await arrange()
+
+      const res = await createDatabase(productId, { name })
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error.fields).toHaveProperty('name')
+    },
+  )
+
+  test('refuses a description over the limit and unknown fields', async () => {
+    const productId = await arrange()
+
+    const tooLong = 'あ'.repeat(LIMITS.databaseDescriptionMaxLength + 1)
+    expect((await createDatabase(productId, { name: 'ok', description: tooLong })).status).toBe(400)
+    expect((await createDatabase(productId, { name: 'ok', target: 'x' })).status).toBe(400)
+  })
+
+  test('refuses a name in use, but not one of a deleted database', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+
+    expect((await createDatabase(productId, { name: 'main' })).status).toBe(409)
+    const removed = await app.request(
+      `/api/products/${productId}/databases/${database.id}`,
+      as('u1', 'DELETE', { confirmationName: 'main', expectedUpdatedAt: database.updatedAt }),
+    )
+    expect(removed.status).toBe(200)
+    expect((await createDatabase(productId, { name: 'main' })).status).toBe(200)
+  })
+
+  test(`refuses a database beyond the limit of ${LIMITS.databasesPerProduct}`, async () => {
+    const productId = await arrange()
+    for (let i = 0; i < LIMITS.databasesPerProduct; i += 1) {
+      expect((await createDatabase(productId, { name: `db${i}` })).status).toBe(200)
+    }
+
+    const res = await createDatabase(productId, { name: 'one_more' })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('limit_exceeded')
+  })
+
+  test('a member can’t create, rename or delete; an outsider gets 404', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const path = `/api/products/${productId}/databases/${database.id}`
+
+    expect((await createDatabase(productId, { name: 'x' }, 'u2')).status).toBe(403)
+    expect(
+      (
+        await app.request(
+          path,
+          as('u2', 'PATCH', { name: 'x', description: '', expectedUpdatedAt: database.updatedAt }),
+        )
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await app.request(
+          path,
+          as('u2', 'DELETE', { confirmationName: 'main', expectedUpdatedAt: database.updatedAt }),
+        )
+      ).status,
+    ).toBe(403)
+    expect((await createDatabase(productId, { name: 'x' }, 'u3')).status).toBe(404)
+  })
+
+  test('renames with optimistic locking, bumping the product and database revisions', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const rename = (name: string, expectedUpdatedAt: number) =>
+      app.request(
+        `/api/products/${productId}/databases/${database.id}`,
+        as('u1', 'PATCH', { name, description: '新しい説明', expectedUpdatedAt }),
+      )
+
+    const res = await rename('renamed', database.updatedAt)
+
+    expect(await res.json()).toMatchObject({
+      database: { id: database.id, name: 'renamed', description: '新しい説明' },
+      revisions: { product: 3, database: 2 },
+    })
+    const stale = await rename('again', database.updatedAt)
+    expect(stale.status).toBe(409)
+    expect((await stale.json()).error.code).toBe('stale_update')
+    expect((await scope(productId)).data.databases[0].name).toBe('renamed')
+  })
+
+  test('deleting needs the name typed again; the database then disappears', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const path = `/api/products/${productId}/databases/${database.id}`
+    const remove = (confirmationName: string) =>
+      app.request(
+        path,
+        as('u1', 'DELETE', { confirmationName, expectedUpdatedAt: database.updatedAt }),
+      )
+
+    expect((await remove('mai')).status).toBe(400)
+    expect(await (await remove('main')).json()).toEqual({ revisions: { product: 3 } })
+    expect((await scope(productId)).data.databases).toEqual([])
+    expect((await remove('main')).status).toBe(404)
+  })
+
+  test('a deleted product’s database can’t be reached by its ID', async () => {
+    const productId = await arrange()
+    const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+    const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
+    if (product) product.deletedAt = Date.now()
+
+    const res = await app.request(
+      `/api/products/${productId}/databases/${database.id}`,
+      as('u1', 'PATCH', { name: 'x', description: '', expectedUpdatedAt: database.updatedAt }),
+    )
+
+    expect(res.status).toBe(404)
   })
 })

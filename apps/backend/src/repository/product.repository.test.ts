@@ -34,6 +34,22 @@ const fakeDao: ProductDao = {
       },
     ],
     invitations: [],
+    databases: [
+      {
+        database: {
+          id: 'd1',
+          productId: 'p1',
+          name: 'ec_main',
+          description: null,
+          createdAt: 1,
+          updatedAt: 1,
+          revision: 1,
+          deletedAt: null,
+        },
+        latestVersion: { id: 'v1', number: 1, status: 'editing', schemaCount: 1, tableCount: 0 },
+        latestFinalVersion: null,
+      },
+    ],
   }),
   findProductsRevision: async () => 7,
   listForUser: async () => ({
@@ -80,6 +96,7 @@ test('maps the product scope', async () => {
     members: [{ userId: 'u1', name: 'はなこ', role: 'owner', joinedAt: 5 }],
     connections: [{ id: 'c1', hasPassword: true }],
   })
+  expect(scope?.databases[0]?.database).not.toHaveProperty('deletedAt')
   expect(JSON.stringify(scope)).not.toContain('cipher')
 })
 
