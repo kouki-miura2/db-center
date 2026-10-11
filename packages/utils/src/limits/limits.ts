@@ -13,13 +13,48 @@
  * - Write the value in its readable form (`300 * 1024 * 1024`, not `314572800`).
  * - JSDoc: what it limits, the unit, where it's checked (UI / API / both), and "Provisional." if
  *   the spec marks it 暫定値.
+ *
+ * The max length of a physical name depends on the target, so it lives in `TARGETS`, not here.
  */
 export const LIMITS = {
-  // Examples — replace with the app's own entries:
-  // /** Max length (characters) of a display name. Checked in both the UI and the API. */
-  // nameMaxLength: 20,
-  // /** Storage quota per user, in bytes (300 MB). Checked in the API on upload. */
-  // userStorageBytes: 300 * 1024 * 1024,
-  // /** Number of items loaded per page in lists (newest first). Provisional. */
-  // listPageSize: 50,
+  /** Members of one product (owner, managers and members), in people. Checked in the API on invite (joined + valid pending invitations) and on join. */
+  membersPerProduct: 10,
+  /** Products one user can belong to. Checked in the API on product creation and on join. */
+  productsPerUser: 20,
+  /** How long an invitation stays valid, in hours. Checked in the API on join. */
+  invitationHours: 24,
+  /** Failed passcode entries per window before entry is blocked until the window passes. Checked in the API on join. */
+  passcodeFailures: 5,
+  /** Window for counting failed passcode entries, in hours. Checked in the API on join. */
+  passcodeFailureWindowHours: 1,
+  /** How long a deleted product or database is kept before it's purged, in days. Applied by the scheduled job. */
+  deletedRetentionDays: 30,
+  /** How long an audit log entry is kept, in days (1 year). Applied by the scheduled job. */
+  auditLogRetentionDays: 365,
+  /** How long a session stays valid, in days. Checked in the API. */
+  sessionDays: 30,
+  /** Minimum interval between revision checks of a scope, in minutes. Checked in the UI. Provisional. */
+  revisionCheckMinutes: 5,
+  /** Max length (characters) of a user name. Checked in both the UI and the API. */
+  userNameMaxLength: 30,
+  /** Max length (characters) of a product name. Checked in both the UI and the API. */
+  productNameMaxLength: 50,
+  /** Max length (characters) of a connection name. Checked in both the UI and the API. */
+  connectionNameMaxLength: 30,
+  /** Max length (characters) of a connection string. Checked in both the UI and the API. */
+  connectionStringMaxLength: 500,
+  /** Max length (characters) of a database description. Checked in both the UI and the API. */
+  databaseDescriptionMaxLength: 200,
+  /** Max length (characters) of a logical name. Checked in both the UI and the API. */
+  logicalNameMaxLength: 100,
+  /** Max length (characters) of a comment or memo. Checked in both the UI and the API. */
+  commentMaxLength: 500,
+  /** Database connections per product. Checked in both the UI and the API on creation. Provisional. */
+  connectionsPerProduct: 10,
+  /** Databases per product. Checked in both the UI and the API on creation. Provisional. */
+  databasesPerProduct: 20,
+  /** Objects (schemas, tables, views, sequences) per version. Checked in both the UI and the API on creation. Provisional. */
+  objectsPerVersion: 1000,
+  /** Columns per table. Checked in both the UI and the API on creation. Provisional. */
+  columnsPerTable: 200,
 } as const
