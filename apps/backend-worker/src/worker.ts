@@ -1,4 +1,5 @@
 import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from 'backend/src/app.ts'
+import { createAuditLogRepository } from 'backend/src/repository/audit-log.repository.ts'
 import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.session.ts'
 import { createConnectionRepository } from 'backend/src/repository/connection.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
@@ -7,12 +8,14 @@ import { createMemberRepository } from 'backend/src/repository/member.repository
 import { createProductRepository } from 'backend/src/repository/product.repository.ts'
 import { createAesGcmSecretBox } from 'backend/src/repository/secret-box.aes-gcm.ts'
 import { createUserRepository } from 'backend/src/repository/user.repository.ts'
+import { createAuditLogService } from 'backend/src/service/audit-log.service.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 
+import { createAuditLogD1Dao } from './dao/audit-log.d1.ts'
 import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
 import { createMemberD1Dao } from './dao/member.d1.ts'
@@ -59,6 +62,10 @@ const buildApp = (env: WorkerEnv) => {
     memberService: createMemberService({
       products,
       members: createMemberRepository(createMemberD1Dao(env.DB)),
+    }),
+    auditLogService: createAuditLogService({
+      products,
+      auditLogs: createAuditLogRepository(createAuditLogD1Dao(env.DB)),
     }),
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: sessionCookie.name }),

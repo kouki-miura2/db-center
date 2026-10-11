@@ -2,18 +2,21 @@ import { LIMITS, TERMS_VERSION } from 'utils'
 import { beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { createApp, SESSION_COOKIE } from './app.ts'
+import { createAuditLogMemoryDao } from './dao/audit-log.memory.ts'
 import { createConnectionMemoryDao } from './dao/connection.memory.ts'
 import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
+import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createMemberRepository } from './repository/member.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
+import { createAuditLogService } from './service/audit-log.service.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
@@ -69,6 +72,10 @@ beforeEach(() => {
     memberService: createMemberService({
       products,
       members: createMemberRepository(createMemberMemoryDao(db)),
+    }),
+    auditLogService: createAuditLogService({
+      products,
+      auditLogs: createAuditLogRepository(createAuditLogMemoryDao(db)),
     }),
     auth: { guard: headerGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.production,
@@ -573,5 +580,35 @@ describe('members', () => {
     expect(
       (await app.request(`/api/products/${productId}/leave`, as(ids.owner, 'POST'))).status,
     ).toBe(409)
+  })
+})
+
+describe('audit log', () => {
+  test('members read the log newest first, then only what’s new', async () => {
+    const { body } = await createProduct('u1', 'shop')
+    const { id, updatedAt } = body.product
+    addMember(id, 'u2', 'member')
+    await app.request(
+      `/api/products/${id}`,
+      as('u1', 'PATCH', { name: 'shop2', expectedUpdatedAt: updatedAt }),
+    )
+
+    const log = await (await app.request(`/api/products/${id}/audit-logs`, as('u2'))).json()
+
+    expect(
+      log.entries.map((e: { action: string; summary: string }) => [e.action, e.summary]),
+    ).toEqual([
+      ['update', 'shop → shop2'],
+      ['create', 'shop'],
+    ])
+    expect(log.entries[0]).toMatchObject({ userId: 'u1', userName: 'u1', targetType: 'product' })
+    expect(log.nextBefore).toBeNull()
+
+    const latest = log.entries[0].cursor
+    const nothingNew = await (
+      await app.request(`/api/products/${id}/audit-logs?after=${latest}`, as('u2'))
+    ).json()
+    expect(nothingNew.entries).toEqual([])
+    expect((await app.request(`/api/products/${id}/audit-logs`, as('u3'))).status).toBe(404)
   })
 })

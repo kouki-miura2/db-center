@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
+import type { AuditLogService } from './service/audit-log.service.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
@@ -60,6 +61,7 @@ export interface AppDependencies {
   connectionService: ConnectionService
   invitationService: InvitationService
   memberService: MemberService
+  auditLogService: AuditLogService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
   /**
@@ -488,6 +490,28 @@ export const createApp = (deps: AppDependencies) => {
           }),
         )
       })
+      // The audit log, newest first: `before` pages back, `after` gets what's new since.
+      .get(
+        '/products/:productId/audit-logs',
+        validate('param', productId),
+        validate(
+          'query',
+          z.object({
+            before: z.string().max(100).optional(),
+            after: z.string().max(100).optional(),
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.auditLogService.list({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              ...c.req.valid('query'),
+            }),
+          )
+        },
+      )
       // Joining with a passcode, as the signed-in user's own email.
       .post(
         '/invitations/join',

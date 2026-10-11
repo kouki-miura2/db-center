@@ -58,6 +58,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       removeMember: unused,
       leave: unused,
     },
+    auditLogService: { list: unused },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.development,
     devLogin: false,
