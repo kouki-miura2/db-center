@@ -28,6 +28,7 @@ import { createAuditLogService } from './service/audit-log.service.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
+import { createDefinitionExportService } from './service/definition-export.service.ts'
 import type { TableDefinition } from './service/definition.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
@@ -97,6 +98,17 @@ beforeEach(() => {
     }),
     scriptService: createScriptService({
       products,
+      objects: createObjectRepository(createObjectMemoryDao(db)),
+      sql: {
+        validateView: async () => ({ columns: [], dependencies: [] }),
+        validateExpression: async () => {},
+        validateDataType: async () => {},
+        validateDdl: async () => {},
+      },
+    }),
+    definitionExportService: createDefinitionExportService({
+      products,
+      databases: createDatabaseRepository(createDatabaseMemoryDao(db)),
       objects: createObjectRepository(createObjectMemoryDao(db)),
       sql: {
         validateView: async () => ({ columns: [], dependencies: [] }),
@@ -1444,3 +1456,128 @@ test('provisional checks block errors, allow warnings and enforce revert permiss
     ).transitioned,
   ).toBe(true)
 })
+
+test.each(['postgresql18', 'sqlite3'] as const)(
+  '%s definition export shares JSON for PDF and Markdown and supports incomplete drafts',
+  async (target) => {
+    const { body } = await createProduct('u1', 'definition-product', target),
+      productId = body.product.id
+    addMember(productId, 'u2', 'member')
+    const { database } = await (
+      await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+    ).json()
+    const id = database.latestVersion.id,
+      path = `/api/versions/${id}`,
+      route = `${path}/definition-export`
+    const initial = await (await app.request(path, as('u1'))).json(),
+      schemaKey = initial.data.objects[0]?.objectKey ?? null
+    const columnKey = crypto.randomUUID()
+    const input = {
+      kind: 'table',
+      name: 'items',
+      logicalName: '商品',
+      schemaKey,
+      definition: {
+        columns: [
+          {
+            key: columnKey,
+            name: 'id',
+            logicalName: '識別子',
+            dataType: 'integer',
+            notNull: true,
+            defaultValue: null,
+            comment: 'ID | `説明`',
+            generation: null,
+            collation: null,
+          },
+        ],
+        constraints: [] as TableDefinition['constraints'],
+        indexes: [],
+        options: {},
+        size: {
+          unit: 'day',
+          initialRows: 100,
+          retentionYears: 1,
+          inserts: 10,
+          updates: 5,
+          deletes: 1,
+          peakFactor: 2,
+          memo: '見積もり',
+        },
+      },
+    }
+    const created = await (await app.request(`${path}/objects`, as('u1', 'POST', input))).json()
+    const before = await (await app.request(path, as('u1'))).json()
+    expect((await app.request(route, as('u3', 'POST', {}))).status).toBe(404)
+    expect((await app.request(route, as('u2', 'POST', { format: 'markdown' }))).status).toBe(400)
+    expect((await app.request(route, as('u2', 'POST', { paper: 'A4' }))).status).toBe(400)
+    expect(
+      (await app.request(route, as('u2', 'POST', { sections: { unexpected: true } }))).status,
+    ).toBe(400)
+    expect(
+      (await app.request(route, as('u2', 'POST', { schemaKeys: [crypto.randomUUID()] }))).status,
+    ).toBe(400)
+    const response = await app.request(route, as('u2', 'POST', { sections: { ddl: true } }))
+    expect(response.status).toBe(200)
+    const data = await response.json()
+    expect(data.metadata).toMatchObject({
+      draft: true,
+      target,
+      version: { status: 'editing' },
+      revision: before.revision,
+    })
+    expect(data.tables[0]).toMatchObject({
+      name: 'items',
+      columns: [{ key: columnKey, comment: 'ID | `説明`' }],
+      size: { input: { initialRows: 100 }, error: null },
+    })
+    expect(data.tables[0].size.estimate.snapshots[0].totalBytes).toBeGreaterThan(0)
+    expect(data.ddl).toMatchObject({ status: 'error', error: { code: 'invalid_input' } })
+    expect(data.history).toHaveLength(1)
+    const withoutDdl = await (
+      await app.request(
+        route,
+        as('u2', 'POST', { sections: { history: false, columns: false, size: false, ddl: false } }),
+      )
+    ).json()
+    expect(withoutDdl.ddl).toBeNull()
+    expect(withoutDdl.history).toEqual([])
+    expect(withoutDdl.tables[0].columns).toEqual([])
+    expect(withoutDdl.tables[0].size).toBeNull()
+    input.definition.constraints.push({
+      kind: 'primary_key',
+      key: crypto.randomUUID(),
+      name: 'items_pk',
+      columns: [columnKey],
+    })
+    const saved = await (
+      await app.request(
+        `${path}/objects/${created.object.objectKey}`,
+        as('u1', 'PUT', { input, expectedUpdatedAt: created.object.updatedAt }),
+      )
+    ).json()
+    expect(saved.object).toBeDefined()
+    const valid = await (
+      await app.request(
+        route,
+        as('u2', 'POST', {
+          sections: { ddl: true },
+          ...(schemaKey ? { schemaKeys: [schemaKey] } : {}),
+        }),
+      )
+    ).json()
+    expect(valid.ddl).toMatchObject({ status: 'success' })
+    expect(valid.ddl.sql).toContain('CREATE TABLE')
+    expect(valid.tables[0].constraints[0].columnNames).toEqual(['id'])
+    const revision = (await (await app.request(path, as('u1'))).json()).revision
+    await app.request(route, as('u2', 'POST', { compareVersionId: id }))
+    expect((await (await app.request(path, as('u1'))).json()).revision).toBe(revision)
+    const { database: other } = await (
+      await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'other' }))
+    ).json()
+    expect(
+      (await app.request(route, as('u2', 'POST', { compareVersionId: other.latestVersion.id })))
+        .status,
+    ).toBe(404)
+  },
+)

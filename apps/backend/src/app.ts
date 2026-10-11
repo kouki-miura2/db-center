@@ -19,6 +19,10 @@ import { columnSchema } from './service/column.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { DatabaseService } from './service/database.service.ts'
 import { ddlOptionsSchema } from './service/ddl.ts'
+import {
+  definitionExportSchema,
+  type DefinitionExportService,
+} from './service/definition-export.service.ts'
 import { objectInputSchema } from './service/definition.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
@@ -81,6 +85,7 @@ export interface AppDependencies {
   objectService: ObjectService
   versionService: VersionService
   scriptService: ScriptService
+  definitionExportService: DefinitionExportService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -756,6 +761,19 @@ export const createApp = (deps: AppDependencies) => {
         async (c) =>
           c.json(
             await deps.scriptService.ddl({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/definition-export',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('json', definitionExportSchema),
+        async (c) =>
+          c.json(
+            await deps.definitionExportService.export({
               userId: requireUser(c).id,
               ...c.req.valid('param'),
               ...c.req.valid('json'),

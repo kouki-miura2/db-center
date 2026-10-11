@@ -16,6 +16,7 @@ import { createAuditLogService } from 'backend/src/service/audit-log.service.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createDatabaseService } from 'backend/src/service/database.service.ts'
+import { createDefinitionExportService } from 'backend/src/service/definition-export.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
@@ -105,6 +106,7 @@ const buildApp = (env: WorkerEnv) => {
       versions: createVersionRepository(createVersionD1Dao(env.DB)),
     }),
     scriptService: createScriptService({ products, objects, sql }),
+    definitionExportService: createDefinitionExportService({ products, databases, objects, sql }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),
     }),
