@@ -4,13 +4,15 @@ import type { VersionContext } from '../dao/object.interface.ts'
 import { AppError } from '../error.ts'
 import type { DesignObject, ObjectRepository } from '../repository/object.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
-import { assertTableDefinition, type ObjectInput } from './definition.ts'
+import type { SqlValidator, ViewAnalysis } from '../repository/sql-validator.interface.ts'
+import { assertSequence, assertTableDefinition, type ObjectInput } from './definition.ts'
 import { allowedRoles } from './permission.ts'
 import { assertConfirmationName, requireMembership } from './product.service.ts'
 
 export const createObjectService = (deps: {
   products: ProductRepository
   objects: ObjectRepository
+  sql?: SqlValidator
 }) => {
   const authorize = async (userId: string, versionId: string) => {
     const context = await deps.objects.findContext(versionId)
@@ -24,6 +26,7 @@ export const createObjectService = (deps: {
     record: DesignObject,
     expectedUpdatedAt: number | null,
     deleting: boolean,
+    expectedRevision?: number,
   ) => {
     if (context.version.status !== 'editing') throw new AppError('invalid_state')
     const now = Date.now()
@@ -37,6 +40,7 @@ export const createObjectService = (deps: {
       now,
       maxObjects: LIMITS.objectsPerVersion,
       maxBytes: LIMITS.versionDefinitionBytes,
+      expectedRevision,
       audit: {
         id: crypto.randomUUID(),
         productId: context.productId,
@@ -106,13 +110,38 @@ export const createObjectService = (deps: {
       const context = await authorize(userId, versionId)
       if (!isIdentifierWithinLimit(context.target, input.name) || input.name.includes('\0'))
         throw new AppError('invalid_input')
-      if (context.target === 'sqlite3' && input.kind !== 'table')
+      if (context.target === 'sqlite3' && !['table', 'view'].includes(input.kind))
         throw new AppError('invalid_input')
       if (input.kind === 'table') assertTableDefinition(context.target, input.definition)
+      if (input.kind === 'sequence') assertSequence(input.definition)
+      let checkedRevision: number | undefined
+      let analysis: ViewAnalysis | undefined
+      if (input.kind === 'view' || input.kind === 'materialized_view') {
+        if (!deps.sql)
+          throw new AppError('invalid_state', { message: 'SQL 検証が設定されていません' })
+        if (context.target === 'sqlite3' && Object.keys(input.definition.options).length)
+          throw new AppError('invalid_input')
+        if (input.kind === 'view' && input.definition.options.withData !== undefined)
+          throw new AppError('invalid_input')
+        if (
+          input.kind === 'materialized_view' &&
+          Object.keys(input.definition.options).some((v) => v !== 'withData')
+        )
+          throw new AppError('invalid_input')
+        const scope = await deps.objects.findScope(versionId)
+        if (!scope) throw new AppError('not_found')
+        analysis = await deps.sql.validateView(
+          context.target,
+          input.definition.select,
+          scope.objects.filter((v) => v.objectKey !== objectKey),
+          input.schemaKey,
+        )
+        checkedRevision = scope.context.version.revision
+      }
       if ((input.kind === 'schema' || context.target === 'sqlite3') !== (input.schemaKey === null))
         throw new AppError('invalid_input')
       if (objectKey && expectedUpdatedAt === undefined) throw new AppError('invalid_input')
-      return write(
+      const saved = await write(
         userId,
         context,
         {
@@ -127,7 +156,9 @@ export const createObjectService = (deps: {
         },
         expectedUpdatedAt ?? null,
         false,
+        checkedRevision,
       )
+      return { ...saved, ...(analysis ? { analysis } : {}) }
     },
     deleteObject: async ({
       userId,

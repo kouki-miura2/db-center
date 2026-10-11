@@ -17,6 +17,8 @@ catalog:
   '@hono/zod-validator': ^0.9.1
   zod: ^4.6.5
   jose: ^6.2.12
+  libpg-query: 18.1.5
+  sql.js: 1.14.1
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:

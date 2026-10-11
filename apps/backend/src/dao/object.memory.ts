@@ -48,6 +48,11 @@ export const createObjectMemoryDao = (db: MemoryDb): ObjectDao => ({
         context.version.status !== 'editing'
       )
         throw new AppError('stale_update')
+      if (
+        input.expectedRevision !== undefined &&
+        context.version.revision !== input.expectedRevision
+      )
+        throw new AppError('stale_update')
       assertActorRole(db, context.productId, input.userId, input.allowedRoles)
       const own = [...objects(db).values()].filter((v) => v.versionId === context.version.id)
       const current = own.find((v) => v.objectKey === input.record.objectKey)

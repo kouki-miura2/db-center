@@ -3,6 +3,8 @@
   "name": "db-center",
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "define": { "__dirname": "\"\"" },
   // One origin: the frontend build is served as static assets at `/`, the API at `/api`.
   // `deploy` and `vp run -t backend-worker#build` build the frontend first.
   "assets": {

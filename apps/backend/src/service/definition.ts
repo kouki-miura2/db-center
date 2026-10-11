@@ -94,6 +94,36 @@ export const tableDefinitionSchema = z.strictObject({
     withoutRowid: z.boolean().optional(),
   }),
 })
+export const viewDefinitionSchema = z.strictObject({
+  select: text(LIMITS.versionDefinitionBytes).min(1),
+  comment: text(LIMITS.commentMaxLength).nullable().default(null),
+  options: z
+    .strictObject({
+      securityInvoker: z.boolean().optional(),
+      securityBarrier: z.boolean().optional(),
+      checkOption: z.enum(['LOCAL', 'CASCADED']).nullable().optional(),
+      withData: z.boolean().optional(),
+    })
+    .default({}),
+})
+const integer64 = z
+  .string()
+  .regex(/^-?\d+$/)
+  .refine(
+    (v) => BigInt(v) >= -(2n ** 63n) && BigInt(v) <= 2n ** 63n - 1n,
+    '64ビット整数を指定してください',
+  )
+export const sequenceDefinitionSchema = z.strictObject({
+  dataType: z.enum(['smallint', 'integer', 'bigint']),
+  start: integer64,
+  increment: integer64,
+  min: integer64.nullable(),
+  max: integer64.nullable(),
+  cache: integer64,
+  cycle: z.boolean(),
+  ownedBy: z.strictObject({ tableKey: z.uuid(), columnKey: z.uuid() }).nullable(),
+  comment: text(LIMITS.commentMaxLength).nullable(),
+})
 export const objectInputSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('schema'),
@@ -109,10 +139,28 @@ export const objectInputSchema = z.discriminatedUnion('kind', [
     schemaKey: z.uuid().nullable(),
     definition: tableDefinitionSchema,
   }),
+  ...(['view', 'materialized_view'] as const).map((kind) =>
+    z.strictObject({
+      kind: z.literal(kind),
+      name: expression,
+      logicalName: text(LIMITS.logicalNameMaxLength).nullable(),
+      schemaKey: z.uuid().nullable(),
+      definition: viewDefinitionSchema,
+    }),
+  ),
+  z.strictObject({
+    kind: z.literal('sequence'),
+    name: expression,
+    logicalName: text(LIMITS.logicalNameMaxLength).nullable(),
+    schemaKey: z.uuid(),
+    definition: sequenceDefinitionSchema,
+  }),
 ])
 export type TableDefinition = z.infer<typeof tableDefinitionSchema>
 export type ObjectInput = z.infer<typeof objectInputSchema>
 export type DesignColumn = z.infer<typeof designColumnSchema>
+export type ViewDefinition = z.infer<typeof viewDefinitionSchema>
+export type SequenceDefinition = z.infer<typeof sequenceDefinitionSchema>
 
 /** Shape and local references only: incomplete tables are deliberately editable. */
 export const assertTableDefinition = (target: Target, definition: TableDefinition): void => {
@@ -159,4 +207,65 @@ export const assertTableDefinition = (target: Target, definition: TableDefinitio
     (definition.options.strict !== undefined || definition.options.withoutRowid !== undefined)
   )
     fail('SQLite のテーブルオプションは指定できません')
+  if (target === 'sqlite3') {
+    if (definition.options.fillfactor !== undefined) fail('SQLite では fillfactor は指定できません')
+    definition.columns.forEach((v) => {
+      if (
+        definition.options.strict &&
+        !['INT', 'INTEGER', 'REAL', 'TEXT', 'BLOB', 'ANY'].includes(v.dataType.toUpperCase())
+      )
+        fail('STRICT のデータ型が正しくありません')
+      if (
+        v.autoincrement &&
+        (v.dataType.toUpperCase() !== 'INTEGER' ||
+          definition.options.withoutRowid ||
+          !definition.constraints.some(
+            (c) => c.kind === 'primary_key' && c.columns.length === 1 && c.columns[0] === v.key,
+          ))
+      )
+        fail('AUTOINCREMENT には INTEGER 単一主キーが必要です')
+    })
+    definition.indexes.forEach((v) => {
+      if (
+        v.method !== 'btree' ||
+        v.include.length ||
+        v.fillfactor !== null ||
+        v.concurrently ||
+        v.columns.some((c) => c.nulls !== null)
+      )
+        fail('SQLite のインデックスに未対応の設定があります')
+    })
+    definition.constraints.forEach((v) => {
+      if (
+        ('notValid' in v && v.notValid) ||
+        ('nullsDistinct' in v && !v.nullsDistinct) ||
+        (v.kind === 'unique' && v.deferrable) ||
+        (v.kind === 'foreign_key' && v.match !== 'SIMPLE')
+      )
+        fail('SQLite の制約に未対応の設定があります')
+    })
+  }
+}
+
+export const assertSequence = (v: SequenceDefinition): void => {
+  const bits = v.dataType === 'smallint' ? 16n : v.dataType === 'integer' ? 32n : 64n
+  const lower = -(2n ** (bits - 1n))
+  const upper = 2n ** (bits - 1n) - 1n
+  const increment = BigInt(v.increment)
+  const min = v.min === null ? (increment > 0n ? 1n : lower) : BigInt(v.min)
+  const max = v.max === null ? (increment > 0n ? upper : -1n) : BigInt(v.max)
+  if (
+    increment === 0n ||
+    increment < lower ||
+    increment > upper ||
+    BigInt(v.cache) < 1n ||
+    min < lower ||
+    max > upper ||
+    min >= max ||
+    BigInt(v.start) < min ||
+    BigInt(v.start) > max
+  )
+    throw new AppError('invalid_input', {
+      message: 'シーケンスの範囲・増分・キャッシュが正しくありません',
+    })
 }

@@ -35,6 +35,7 @@ export interface ObjectWrite {
   delete: boolean
   maxObjects: number
   maxBytes: number
+  expectedRevision?: number
 }
 export interface ObjectDao {
   findContext: (versionId: string) => Promise<VersionContext | null>

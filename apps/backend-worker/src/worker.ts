@@ -20,6 +20,8 @@ import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 import { createRevisionService } from 'backend/src/service/revision.service.ts'
+import pgWasm from 'libpg-query/wasm/libpg-query.wasm'
+import sqliteWasm from 'sql.js/dist/sql-wasm.wasm'
 
 import { createAuditLogD1Dao } from './dao/audit-log.d1.ts'
 import { createConnectionD1Dao } from './dao/connection.d1.ts'
@@ -30,6 +32,7 @@ import { createObjectD1Dao } from './dao/object.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
 import { createRevisionD1Dao } from './dao/revision.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
+import { createSqlValidator } from './sql-validator.ts'
 
 /**
  * Secrets and local-only settings, which `wrangler types` doesn't know about since they aren't in
@@ -47,6 +50,12 @@ interface WorkerEnv extends Env {
 }
 
 const buildApp = (env: WorkerEnv) => {
+  // Emscripten reads self.location even when instantiateWasm supplies the imported module.
+  if (!('location' in globalThis))
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'https://wasm.invalid/' },
+      configurable: true,
+    })
   const users = createUserD1Dao(env.DB)
   const development = env.DEV_LOGIN === 'true'
   const sessionCookie = development ? SESSION_COOKIE.development : SESSION_COOKIE.production
@@ -79,6 +88,7 @@ const buildApp = (env: WorkerEnv) => {
     objectService: createObjectService({
       products,
       objects: createObjectRepository(createObjectD1Dao(env.DB)),
+      sql: createSqlValidator({ pg: pgWasm, sqlite: sqliteWasm }),
     }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),

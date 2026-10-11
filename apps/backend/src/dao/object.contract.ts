@@ -100,4 +100,13 @@ export const objectDaoContract = (
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
     expect((await f.dao.findContext('v1'))!.version.revision).toBe(3)
   })
+  test('a design changed during view validation cannot be saved', async () => {
+    const f = await arrange()
+    const input = f.input('view')
+    await f.dao.save(f.input('table'))
+    await expect(f.dao.save({ ...input, expectedRevision: 1 })).rejects.toMatchObject({
+      code: 'stale_update',
+    })
+    expect((await f.dao.findContext('v1'))!.version.revision).toBe(2)
+  })
 }

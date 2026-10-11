@@ -89,6 +89,16 @@ export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
         c.productId,
       ),
     ]
+    if (input.expectedRevision !== undefined)
+      statements.push(
+        guard(
+          db,
+          'stale_update',
+          '(SELECT revision FROM versions WHERE id = ?) <> ?',
+          versionId,
+          input.expectedRevision,
+        ),
+      )
     if (!input.delete && r.schemaKey)
       statements.push(
         guard(

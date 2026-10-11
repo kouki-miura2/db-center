@@ -1,6 +1,12 @@
 import { expect, test } from 'vite-plus/test'
 
-import { assertTableDefinition, objectInputSchema, tableDefinitionSchema } from './definition.ts'
+import {
+  assertTableDefinition,
+  assertSequence,
+  objectInputSchema,
+  sequenceDefinitionSchema,
+  tableDefinitionSchema,
+} from './definition.ts'
 
 export const tableFixture = () =>
   tableDefinitionSchema.parse({
@@ -35,6 +41,32 @@ test('incomplete tables can be saved; unknown fields and nonfinite inputs cannot
       definition: {},
     }).success,
   ).toBe(true)
+})
+
+test('SQLite strict types and PostgreSQL-only options are rejected', () => {
+  const table = tableFixture()
+  table.options = { strict: true }
+  expect(() => assertTableDefinition('sqlite3', table)).toThrow()
+  table.columns[0]!.dataType = 'INTEGER'
+  expect(() => assertTableDefinition('sqlite3', table)).not.toThrow()
+  table.options.fillfactor = 90
+  expect(() => assertTableDefinition('sqlite3', table)).toThrow()
+})
+test('sequences keep 64-bit precision and validate bounds', () => {
+  const value = sequenceDefinitionSchema.parse({
+    dataType: 'bigint',
+    start: '9223372036854775806',
+    increment: '1',
+    min: null,
+    max: null,
+    cache: '1',
+    cycle: false,
+    ownedBy: null,
+    comment: null,
+  })
+  expect(() => assertSequence(value)).not.toThrow()
+  expect(() => assertSequence({ ...value, increment: '0' })).toThrow()
+  expect(() => assertSequence({ ...value, dataType: 'smallint' })).toThrow()
 })
 test('duplicate keys, missing local columns, and incompatible options are refused', () => {
   const table = tableFixture()
