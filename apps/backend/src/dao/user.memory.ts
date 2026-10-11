@@ -28,4 +28,13 @@ export const createUserMemoryDao = (db: MemoryDb): UserDao => ({
       sessions(db).set(session.id, { ...session })
       return { ...user }
     }),
+  findSessionUser: async (sessionId, now) => {
+    const session = sessions(db).get(sessionId)
+    if (!session || session.expiresAt <= now) return null
+    const user = users(db).get(session.userId)
+    return user && user.deletedAt === null ? { ...user } : null
+  },
+  deleteSession: async (sessionId) => {
+    sessions(db).delete(sessionId)
+  },
 })

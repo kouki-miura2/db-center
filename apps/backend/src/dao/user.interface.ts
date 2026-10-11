@@ -33,4 +33,11 @@ export interface UserDao {
     login: { userId: string; email: string; lastLoginAt: number },
     session: SessionRecord,
   ) => Promise<UserRecord>
+  /**
+   * The user of a session that hasn't expired at `now`, or null (unknown or expired session,
+   * withdrawn user). Reads the session and the user by primary key only.
+   */
+  findSessionUser: (sessionId: string, now: number) => Promise<UserRecord | null>
+  /** Deletes the session if it exists. */
+  deleteSession: (sessionId: string) => Promise<void>
 }

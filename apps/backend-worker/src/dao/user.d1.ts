@@ -76,4 +76,16 @@ export const createUserD1Dao = (db: D1Database): UserDao => ({
     ])
     return toRecord(updated?.results[0] as UserRow)
   },
+  findSessionUser: async (sessionId, now) => {
+    const row = await db
+      .prepare(
+        'SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.id = ? AND sessions.expires_at > ? AND users.deleted_at IS NULL',
+      )
+      .bind(sessionId, now)
+      .first<UserRow>()
+    return row ? toRecord(row) : null
+  },
+  deleteSession: async (sessionId) => {
+    await db.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run()
+  },
 })

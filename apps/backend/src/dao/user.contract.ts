@@ -63,6 +63,31 @@ export const userDaoContract = (
     expect(await countSessions()).toBe(2)
   })
 
+  test('finds the user of a session only until it expires', async () => {
+    const { dao } = await setup()
+    await dao.register(user(), session('s1')) // expires at 9000
+
+    expect(await dao.findSessionUser('s1', 8999)).toEqual(user())
+    expect(await dao.findSessionUser('s1', 9000)).toBeNull()
+    expect(await dao.findSessionUser('unknown', 1000)).toBeNull()
+  })
+
+  test('deletes a session, leaving the user’s other sessions', async () => {
+    const { dao, countSessions } = await setup()
+    await dao.register(user(), session('s1'))
+    await dao.recordLogin(
+      { userId: 'u1', email: 'a@example.com', lastLoginAt: 2000 },
+      session('s2'),
+    )
+
+    await dao.deleteSession('s1')
+    await dao.deleteSession('s1')
+
+    expect(await dao.findSessionUser('s1', 1000)).toBeNull()
+    expect(await dao.findSessionUser('s2', 1000)).not.toBeNull()
+    expect(await countSessions()).toBe(1)
+  })
+
   test('creates no session when the user is gone', async () => {
     const { dao, countSessions } = await setup()
 

@@ -1,7 +1,7 @@
 import { type Context, Hono } from 'hono'
-import { setCookie } from 'hono/cookie'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { csrf } from 'hono/csrf'
-import { createLogger, LIMITS } from 'utils'
+import { createLogger, LIMITS, TERMS_VERSION } from 'utils'
 import { z } from 'zod'
 
 import { AppError, errorResponse } from './error.ts'
@@ -31,6 +31,12 @@ export const SESSION_COOKIE = {
   development: { name: 'session', secure: false },
 } as const satisfies Record<string, SessionCookieConfig>
 
+/**
+ * Paths reachable without a session: signing in, signing up, and signing out (which must work with
+ * an expired session too). Runtime packages pass them as `auth.excludePaths`.
+ */
+export const PUBLIC_PATHS = ['/api/auth/google', '/api/auth/register', '/api/auth/logout']
+
 export interface AppDependencies {
   sampleService: SampleService
   authService: AuthService
@@ -49,6 +55,13 @@ const generateRequestId = (): string =>
   Array.from(crypto.getRandomValues(new Uint8Array(4)), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('')
+
+/** The authenticated user; throws `unauthorized` when the request has none. */
+const requireUser = (c: Context<{ Variables: Variables }>): AuthenticatedUser => {
+  const user = c.get('user')
+  if (!user) throw new AppError('unauthorized')
+  return user
+}
 
 /** Runtime-agnostic app: no Cloudflare Workers or Node-specific APIs here. Entrypoints live in the runtime package (`apps/backend-*`). */
 export const createApp = (deps: AppDependencies) => {
@@ -154,6 +167,21 @@ export const createApp = (deps: AppDependencies) => {
           return c.json(body)
         },
       )
+      // The signed-in user, and whether they must agree to the current terms first.
+      .get('/auth/me', (c) => {
+        const user = requireUser(c)
+        return c.json({
+          user: { id: user.id, name: user.name, email: user.email },
+          consentRequired: user.termsVersion !== TERMS_VERSION,
+        })
+      })
+      // Ends this browser's session and clears the cookie, even if the session already expired.
+      .post('/auth/logout', async (c) => {
+        const token = getCookie(c, deps.sessionCookie.name)
+        if (token) await deps.authService.signOut(token)
+        deleteCookie(c, deps.sessionCookie.name, { path: '/', secure: deps.sessionCookie.secure })
+        return c.body(null, 204)
+      })
       // Reference implementation of one endpoint through the app -> service -> repository -> dao
       // layering: the runtime entrypoints wire the concrete dependencies, this route only talks
       // to `SampleService`. Build real routes the same way, then delete this route and the

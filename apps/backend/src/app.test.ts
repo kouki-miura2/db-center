@@ -8,7 +8,15 @@ import type { SampleService } from './service/sample.service.ts'
 const sampleService: SampleService = {
   getSample: async (id) => (id === '1' ? { id, message: 'Sample "First sample record"' } : null),
 }
-const allowAllGuard: AuthGuard = { authenticate: async () => ({ id: 'test-user' }) }
+const allowAllGuard: AuthGuard = {
+  authenticate: async () => ({
+    id: 'test-user',
+    name: 'テスト',
+    email: 'test@example.com',
+    termsVersion: 'v1',
+    sessionId: 's1',
+  }),
+}
 const denyAllGuard: AuthGuard = { authenticate: async () => null }
 // Dependencies these tests don't exercise.
 const unusedAuthService: AuthService = {
@@ -16,6 +24,9 @@ const unusedAuthService: AuthService = {
     throw new Error('unused')
   },
   register: async () => {
+    throw new Error('unused')
+  },
+  signOut: async () => {
     throw new Error('unused')
   },
 }

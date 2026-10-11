@@ -15,6 +15,7 @@ export interface UserRepository {
     login: { userId: string; email: string; lastLoginAt: number },
     session: SessionRecord,
   ) => Promise<User>
+  deleteSession: (sessionId: string) => Promise<void>
 }
 
 const toUser = (record: UserRecord): User | null =>
@@ -32,4 +33,5 @@ export const createUserRepository = (dao: UserDao): UserRepository => ({
     return toUser(user) as User
   },
   recordLogin: async (login, session) => toUser(await dao.recordLogin(login, session)) as User,
+  deleteSession: (sessionId) => dao.deleteSession(sessionId),
 })

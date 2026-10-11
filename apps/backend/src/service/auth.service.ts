@@ -44,6 +44,8 @@ export interface AuthService {
     name: string
     termsVersion: string
   }) => Promise<RegisterResult>
+  /** Ends the session of this cookie token, if it still exists. */
+  signOut: (sessionToken: string) => Promise<void>
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -141,5 +143,9 @@ export const createAuthService = (deps: {
       if (error instanceof AppError && error.code === 'duplicate') throw alreadyRegistered()
       throw error
     }
+  },
+
+  signOut: async (sessionToken) => {
+    await deps.users.deleteSession(await hashSessionToken(sessionToken))
   },
 })

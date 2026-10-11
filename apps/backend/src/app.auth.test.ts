@@ -2,9 +2,10 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTPayload, SignJWT
 import { TERMS_VERSION } from 'utils'
 import { beforeAll, beforeEach, expect, test } from 'vite-plus/test'
 
-import { createApp, SESSION_COOKIE } from './app.ts'
+import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from './app.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createUserMemoryDao } from './dao/user.memory.ts'
+import { createSessionAuthGuard } from './repository/auth-guard.session.ts'
 import type { GoogleIdTokenVerifier } from './repository/google-id-token.interface.ts'
 import { createGoogleIdTokenVerifier } from './repository/google-id-token.jose.ts'
 import { createUserRepository } from './repository/user.repository.ts'
@@ -29,13 +30,16 @@ beforeAll(async () => {
 
 beforeEach(() => {
   db = createMemoryDb()
+  const users = createUserMemoryDao(db)
   app = createApp({
     sampleService: { getSample: async () => null },
-    authService: createAuthService({
-      verifier,
-      users: createUserRepository(createUserMemoryDao(db)),
-    }),
-    auth: { guard: { authenticate: async () => null }, enabled: false, excludePaths: [] },
+    authService: createAuthService({ verifier, users: createUserRepository(users) }),
+    // As in production: every path needs a session except the public ones.
+    auth: {
+      guard: createSessionAuthGuard({ users, cookieName: SESSION_COOKIE.production.name }),
+      enabled: true,
+      excludePaths: PUBLIC_PATHS,
+    },
     sessionCookie: SESSION_COOKIE.production,
   })
 })
@@ -174,4 +178,65 @@ test.each([
 
   expect(res.status).toBe(401)
   expect(memoryTable(db, 'users').size).toBe(0)
+})
+
+const me = (token?: string) =>
+  app.request('/api/auth/me', token ? { headers: { cookie: `__Host-session=${token}` } } : {})
+
+const logout = (token?: string) =>
+  app.request('/api/auth/logout', {
+    method: 'POST',
+    headers: {
+      'sec-fetch-site': 'same-origin',
+      ...(token ? { cookie: `__Host-session=${token}` } : {}),
+    },
+  })
+
+test('the session cookie authenticates later requests', async () => {
+  const token = sessionToken(await register())
+
+  const res = await me(token)
+
+  expect(await res.json()).toEqual({
+    user: { id: expect.any(String), name: 'はなこ', email: 'hanako@example.com' },
+    consentRequired: false,
+  })
+})
+
+test('a request without a valid session is 401', async () => {
+  expect((await me()).status).toBe(401)
+  expect((await me('forged-token')).status).toBe(401)
+})
+
+test('an expired session is 401', async () => {
+  const token = sessionToken(await register())
+  memoryTable<{ expiresAt: number }>(db, 'sessions').forEach((session) => {
+    session.expiresAt = Date.now() - 1
+  })
+
+  expect((await me(token)).status).toBe(401)
+})
+
+test('logging out ends the session and clears the cookie', async () => {
+  const token = sessionToken(await register())
+
+  const res = await logout(token)
+
+  expect(res.status).toBe(204)
+  expect(res.headers.get('set-cookie')).toMatch(/__Host-session=;.*Max-Age=0/)
+  expect(memoryTable(db, 'sessions').size).toBe(0)
+  expect((await me(token)).status).toBe(401)
+})
+
+test('logging out only ends this session', async () => {
+  const first = sessionToken(await register())
+  const second = sessionToken(await post('/api/auth/google', { idToken: await idToken() }))
+
+  await logout(first)
+
+  expect((await me(second)).status).toBe(200)
+})
+
+test('logging out without a session still succeeds', async () => {
+  expect((await logout()).status).toBe(204)
 })
