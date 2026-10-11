@@ -1,13 +1,17 @@
 import { LIMITS, TERMS_VERSION } from 'utils'
-import { beforeEach, expect, test } from 'vite-plus/test'
+import { beforeEach, describe, expect, test } from 'vite-plus/test'
 
 import { createApp, SESSION_COOKIE } from './app.ts'
+import { createConnectionMemoryDao } from './dao/connection.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
+import { createConnectionRepository } from './repository/connection.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
+import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
 import type { AuthService } from './service/auth.service.ts'
+import { createConnectionService } from './service/connection.service.ts'
 import { createProductService } from './service/product.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
@@ -41,10 +45,14 @@ beforeEach(() => {
       deletedAt: null,
     })
   }
+  const products = createProductRepository(createProductMemoryDao(db))
   app = createApp({
     authService: {} as AuthService,
-    productService: createProductService({
-      products: createProductRepository(createProductMemoryDao(db)),
+    productService: createProductService({ products }),
+    connectionService: createConnectionService({
+      products,
+      connections: createConnectionRepository(createConnectionMemoryDao(db)),
+      secrets: createAesGcmSecretBox(btoa('k'.repeat(32))),
     }),
     auth: { guard: headerGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.production,
@@ -260,4 +268,112 @@ test('the owner deletes a product after typing its name; it is gone for everyone
   expect(list.data).toEqual([])
   // Its name is free again.
   expect((await createProduct('u1', 'shop')).res.status).toBe(200)
+})
+
+describe('connections', () => {
+  const setupProduct = async (target = 'postgresql18') => {
+    const { body } = await createProduct('u1', `shop-${target}`, target)
+    return body.product.id as string
+  }
+  const scopeOf = async (id: string, userId = 'u1') =>
+    (await (await app.request(`/api/products/${id}`, as(userId))).json()).data
+
+  test('adds a connection whose password never comes back', async () => {
+    const id = await setupProduct()
+
+    const res = await app.request(
+      `/api/products/${id}/connections`,
+      as('u1', 'POST', {
+        name: '本番',
+        connectionString: 'postgresql://app@db.example.com/ec',
+        password: 'top-secret',
+      }),
+    )
+
+    const body = await res.json()
+    expect(body).toMatchObject({
+      connection: { name: '本番', hasPassword: true, sortOrder: 1 },
+      revisions: { product: 2 },
+    })
+    const scope = await scopeOf(id)
+    expect(scope.connections).toEqual([body.connection])
+    expect(JSON.stringify(scope)).not.toContain('top-secret')
+    expect(JSON.stringify([...memoryTable(db, 'connections').values()])).not.toContain('top-secret')
+    expect(JSON.stringify([...memoryTable(db, 'audit_logs').values()])).not.toContain('top-secret')
+  })
+
+  test('only owners and managers edit connections, and SQLite products have none', async () => {
+    const id = await setupProduct()
+    addMember(id, 'u2', 'member')
+    const sqlite = await setupProduct('sqlite3')
+    const add = (productId: string, userId: string) =>
+      app.request(
+        `/api/products/${productId}/connections`,
+        as(userId, 'POST', { name: 'x', connectionString: 'postgresql://app@db/ec' }),
+      )
+
+    expect((await add(id, 'u2')).status).toBe(403)
+    expect((await add(id, 'u3')).status).toBe(404)
+    expect((await add(sqlite, 'u1')).status).toBe(409)
+  })
+
+  test('updates, reorders and deletes connections', async () => {
+    const id = await setupProduct()
+    const add = async (name: string) =>
+      (
+        await (
+          await app.request(
+            `/api/products/${id}/connections`,
+            as('u1', 'POST', { name, connectionString: 'postgresql://app@db/ec', password: 'pw' }),
+          )
+        ).json()
+      ).connection
+    const first = await add('開発')
+    const second = await add('本番')
+
+    const updated = await app.request(
+      `/api/products/${id}/connections/${first.id}`,
+      as('u1', 'PATCH', {
+        name: '開発2',
+        connectionString: 'postgresql://app@db2/ec',
+        password: null,
+        expectedUpdatedAt: first.updatedAt,
+      }),
+    )
+    expect(await updated.json()).toMatchObject({
+      connection: { name: '開発2', hasPassword: false },
+    })
+
+    const { revision } = await (await app.request(`/api/products/${id}`, as('u1'))).json()
+    const reordered = await app.request(
+      `/api/products/${id}/connections/order`,
+      as('u1', 'PUT', { connectionIds: [second.id, first.id], expectedRevision: revision }),
+    )
+    expect(reordered.status).toBe(200)
+    expect((await scopeOf(id)).connections.map((c: { name: string }) => c.name)).toEqual([
+      '本番',
+      '開発2',
+    ])
+
+    const removed = await app.request(
+      `/api/products/${id}/connections/${second.id}`,
+      as('u1', 'DELETE', { expectedUpdatedAt: second.updatedAt }),
+    )
+    expect(removed.status).toBe(200)
+    expect((await scopeOf(id)).connections).toHaveLength(1)
+  })
+
+  test('refuses a connection string with a password in it', async () => {
+    const id = await setupProduct()
+
+    const res = await app.request(
+      `/api/products/${id}/connections`,
+      as('u1', 'POST', { name: 'x', connectionString: 'postgresql://app:pw@db/ec' }),
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({
+      error: { fields: { connectionString: expect.any(String) } },
+    })
+  })
 })

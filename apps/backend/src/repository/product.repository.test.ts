@@ -21,6 +21,18 @@ const fakeDao: ProductDao = {
   findScope: async () => ({
     product: record,
     members: [{ userId: 'u1', name: 'はなこ', role: 'owner', joinedAt: 5 }],
+    connections: [
+      {
+        id: 'c1',
+        productId: 'p1',
+        name: '本番',
+        connectionString: 'postgresql://app@db/ec',
+        passwordEncrypted: 'v1.cipher',
+        sortOrder: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
   }),
   findProductsRevision: async () => 7,
   listForUser: async () => ({
@@ -61,10 +73,13 @@ test('maps a membership without the storage-only deletedAt', async () => {
 test('maps the product scope', async () => {
   const repository = createProductRepository(fakeDao)
 
-  expect(await repository.findScope('p1')).toEqual({
+  const scope = await repository.findScope('p1')
+  expect(scope).toMatchObject({
     product,
     members: [{ userId: 'u1', name: 'はなこ', role: 'owner', joinedAt: 5 }],
+    connections: [{ id: 'c1', hasPassword: true }],
   })
+  expect(JSON.stringify(scope)).not.toContain('cipher')
 })
 
 test('stores a new product as not deleted', async () => {

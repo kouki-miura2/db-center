@@ -1,11 +1,15 @@
 import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from 'backend/src/app.ts'
 import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.session.ts'
+import { createConnectionRepository } from 'backend/src/repository/connection.repository.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createProductRepository } from 'backend/src/repository/product.repository.ts'
+import { createAesGcmSecretBox } from 'backend/src/repository/secret-box.aes-gcm.ts'
 import { createUserRepository } from 'backend/src/repository/user.repository.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
+import { createConnectionService } from 'backend/src/service/connection.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 
+import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
 
@@ -13,11 +17,14 @@ import { createUserD1Dao } from './dao/user.d1.ts'
  * Secrets and local-only settings, which `wrangler types` doesn't know about since they aren't in
  * `wrangler.jsonc`:
  * - `GOOGLE_CLIENT_ID`: secret (`wrangler secret put`). Unset, every Google sign-in is rejected.
+ * - `ENCRYPTION_KEY`: secret, 32 random bytes in base64, encrypting connection passwords and
+ *   invitation passcodes. Unset, setting a password or inviting is refused.
  * - `DEV_LOGIN`: `"true"` only in the untracked `.dev.vars`, for local development. Turns on the
  *   development login and the http session cookie. Never set it for a deployed Worker.
  */
 interface WorkerEnv extends Env {
   GOOGLE_CLIENT_ID?: string
+  ENCRYPTION_KEY?: string
   DEV_LOGIN?: string
 }
 
@@ -25,13 +32,18 @@ const buildApp = (env: WorkerEnv) => {
   const users = createUserD1Dao(env.DB)
   const development = env.DEV_LOGIN === 'true'
   const sessionCookie = development ? SESSION_COOKIE.development : SESSION_COOKIE.production
+  const products = createProductRepository(createProductD1Dao(env.DB))
+  const secrets = createAesGcmSecretBox(env.ENCRYPTION_KEY || undefined)
   return createApp({
     authService: createAuthService({
       verifier: createGoogleIdTokenVerifier({ clientId: env.GOOGLE_CLIENT_ID || undefined }),
       users: createUserRepository(users),
     }),
-    productService: createProductService({
-      products: createProductRepository(createProductD1Dao(env.DB)),
+    productService: createProductService({ products }),
+    connectionService: createConnectionService({
+      products,
+      connections: createConnectionRepository(createConnectionD1Dao(env.DB)),
+      secrets,
     }),
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: sessionCookie.name }),

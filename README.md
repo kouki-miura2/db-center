@@ -80,7 +80,8 @@ Local settings go in `apps/backend-worker/.dev.vars` (untracked):
 
 ```
 DEV_LOGIN=true              # development login (POST /api/auth/dev-login) and an http session cookie
-# GOOGLE_CLIENT_ID=<web OAuth client id>   # only to try Google sign-in locally
+  # GOOGLE_CLIENT_ID=<web OAuth client id>   # only to try Google sign-in locally
+  # ENCRYPTION_KEY=<32 random bytes, base64>   # to set connection passwords and invite users
 ```
 
 Apply the D1 migrations to the local database first (and after adding one):
@@ -106,7 +107,13 @@ Before the first deploy, set the Google OAuth client ID in both places (without 
 - Backend: `npx wrangler secret put GOOGLE_CLIENT_ID` (run in `apps/backend-worker`).
 - Frontend: `VITE_GOOGLE_WEB_CLIENT_ID` in `apps/frontend/.env.local`.
 
-Never set `DEV_LOGIN` for a deployed Worker.
+  Also set the encryption key for connection passwords and invitation passcodes (32 random bytes, base64,
+  e.g. `node -e "console.log(crypto.randomBytes(32).toString('base64'))"`). Keep it: losing it makes stored
+  passwords unreadable.
+
+  - Backend: `npx wrangler secret put ENCRYPTION_KEY` (run in `apps/backend-worker`).
+
+  Never set `DEV_LOGIN` for a deployed Worker.
 
 - Regenerate Workers binding types:
 

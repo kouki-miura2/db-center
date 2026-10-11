@@ -167,6 +167,7 @@ test('returns the whole product scope with the role and members in role order', 
           { userId: 'u1', name: 'a', role: 'owner', joinedAt: 2 },
           { userId: 'u4', name: 'd', role: 'manager', joinedAt: 2 },
         ],
+        connections: [],
       }),
     }),
   })

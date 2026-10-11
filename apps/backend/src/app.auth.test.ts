@@ -2,7 +2,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTPayload, SignJWT
 import { TERMS_VERSION } from 'utils'
 import { beforeAll, beforeEach, expect, test } from 'vite-plus/test'
 
-import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from './app.ts'
+import { type AppDependencies, createApp, PUBLIC_PATHS, SESSION_COOKIE } from './app.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao } from './dao/product.memory.ts'
 import { createUserMemoryDao } from './dao/user.memory.ts'
@@ -39,6 +39,7 @@ beforeEach(() => {
     productService: createProductService({
       products: createProductRepository(createProductMemoryDao(db)),
     }),
+    connectionService: {} as AppDependencies['connectionService'],
     // As in production: every path needs a session except the public ones.
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: SESSION_COOKIE.production.name }),

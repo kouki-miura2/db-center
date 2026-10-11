@@ -44,6 +44,12 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       renameProduct: unused,
       deleteProduct: unused,
     },
+    connectionService: {
+      createConnection: unused,
+      updateConnection: unused,
+      deleteConnection: unused,
+      reorderConnections: unused,
+    },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.development,
     devLogin: false,

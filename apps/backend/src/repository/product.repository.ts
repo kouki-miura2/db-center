@@ -6,6 +6,7 @@ import type {
   ProductRecord,
   Role,
 } from '../dao/product.interface.ts'
+import { type Connection, toConnection } from './connection.repository.ts'
 
 /** A product that isn't deleted, as the services see it. */
 export interface Product {
@@ -27,7 +28,9 @@ export type Member = MemberRecord
 
 export interface ProductRepository {
   findMembership: (productId: string, userId: string) => Promise<Membership | null>
-  findScope: (productId: string) => Promise<{ product: Product; members: Member[] } | null>
+  findScope: (
+    productId: string,
+  ) => Promise<{ product: Product; members: Member[]; connections: Connection[] } | null>
   findProductsRevision: (userId: string) => Promise<number | null>
   listForUser: (userId: string) => Promise<{ revision: number; memberships: Membership[] }>
   create: (input: {
@@ -70,7 +73,13 @@ export const createProductRepository = (dao: ProductDao): ProductRepository => (
   },
   findScope: async (productId) => {
     const scope = await dao.findScope(productId)
-    return scope ? { product: toProduct(scope.product), members: scope.members } : null
+    return scope
+      ? {
+          product: toProduct(scope.product),
+          members: scope.members,
+          connections: scope.connections.map(toConnection),
+        }
+      : null
   },
   findProductsRevision: (userId) => dao.findProductsRevision(userId),
   listForUser: async (userId) => {

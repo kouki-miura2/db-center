@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
+import type { ConnectionService } from './service/connection.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import { text, validate } from './validation.ts'
 
@@ -54,6 +55,7 @@ const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]']
 export interface AppDependencies {
   authService: AuthService
   productService: ProductService
+  connectionService: ConnectionService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
   /**
@@ -72,6 +74,13 @@ const productName = text(LIMITS.productNameMaxLength).min(1)
 const target = z.enum(Object.keys(TARGETS) as [Target, ...Target[]])
 /** The `updatedAt` the client last read: the write is refused if the data changed since. */
 const expectedUpdatedAt = z.number().int().nonnegative()
+const connectionParams = z.object({ productId: z.uuid(), connectionId: z.uuid() })
+const connectionFields = {
+  name: text(LIMITS.connectionNameMaxLength).min(1),
+  connectionString: text(LIMITS.connectionStringMaxLength).min(1),
+}
+// Long enough for any real password; never logged or returned.
+const password = z.string().min(1).max(1000)
 /** The revision of a scope the client holds, if any (`?revision=`). */
 const revisionQuery = z.object({ revision: z.coerce.number().int().positive().optional() })
 
@@ -298,6 +307,81 @@ export const createApp = (deps: AppDependencies) => {
             await deps.productService.deleteProduct({
               userId: user.id,
               productId: c.req.valid('param').productId,
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      // Database connections of a product (owner, manager). Passwords go in, never out.
+      .post(
+        '/products/:productId/connections',
+        validate('param', productId),
+        validate('json', z.strictObject({ ...connectionFields, password: password.optional() })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.connectionService.createConnection({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      .put(
+        '/products/:productId/connections/order',
+        validate('param', productId),
+        validate(
+          'json',
+          z.strictObject({
+            connectionIds: z.array(z.uuid()).max(LIMITS.connectionsPerProduct),
+            expectedRevision: z.number().int().positive(),
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.connectionService.reorderConnections({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      .patch(
+        '/products/:productId/connections/:connectionId',
+        validate('param', connectionParams),
+        // `password`: omitted keeps it, null removes it.
+        validate(
+          'json',
+          z.strictObject({
+            ...connectionFields,
+            password: password.nullable().optional(),
+            expectedUpdatedAt,
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.connectionService.updateConnection({
+              userId: user.id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      .delete(
+        '/products/:productId/connections/:connectionId',
+        validate('param', connectionParams),
+        validate('json', z.strictObject({ expectedUpdatedAt })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.connectionService.deleteConnection({
+              userId: user.id,
+              ...c.req.valid('param'),
               ...c.req.valid('json'),
             }),
           )

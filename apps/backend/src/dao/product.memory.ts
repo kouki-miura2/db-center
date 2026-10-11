@@ -1,4 +1,5 @@
 import { AppError } from '../error.ts'
+import type { ConnectionRecord } from './connection.interface.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import type {
   MemberRecord,
@@ -48,7 +49,31 @@ const ownsName = (db: MemoryDb, ownerId: string, name: string, exceptProductId: 
       activeProduct(db, row.productId)?.name === name,
   )
 
-const bumpProductsRevision = (db: MemoryDb, userId: string) => {
+/**
+ * Throws `stale_update` unless the product isn't deleted and the user has one of the roles (the
+ * D1 `actorHasRole` guard). Returns the product.
+ */
+export const assertActorRole = (
+  db: MemoryDb,
+  productId: string,
+  userId: string,
+  allowedRoles: Role[],
+): ProductRecord => {
+  const product = activeProduct(db, productId)
+  const actor = members(db).get(memberKey(productId, userId))
+  if (!product || !actor || !allowedRoles.includes(actor.role)) throw new AppError('stale_update')
+  return product
+}
+
+/** Bumps the product scope's revision. */
+export const bumpProductRevision = (db: MemoryDb, productId: string): number => {
+  const product = products(db).get(productId)
+  if (!product) throw new AppError('stale_update')
+  product.revision += 1
+  return product.revision
+}
+
+export const bumpProductsRevision = (db: MemoryDb, userId: string) => {
   const user = users(db).get(userId)
   if (!user) throw new AppError('stale_update')
   user.productsRevision += 1
@@ -73,7 +98,10 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
         role: row.role,
         joinedAt: row.joinedAt,
       }))
-    return { product: { ...product }, members: list }
+    const connections = [...memoryTable<ConnectionRecord>(db, 'connections').values()]
+      .filter((row) => row.productId === productId)
+      .map((row) => ({ ...row }))
+    return { product: { ...product }, members: list, connections }
   },
 
   findProductsRevision: async (userId) => users(db).get(userId)?.productsRevision ?? null,
@@ -106,8 +134,7 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
 
   rename: async ({ productId, name, expectedUpdatedAt, now, userId, allowedRoles, audit }) =>
     atomic(db, () => {
-      const actor = members(db).get(memberKey(productId, userId))
-      if (!actor || !allowedRoles.includes(actor.role)) throw new AppError('stale_update')
+      assertActorRole(db, productId, userId, allowedRoles)
       const product = assertCurrent(activeProduct(db, productId), expectedUpdatedAt)
       const ownerId = ownerOf(db, productId)
       if (ownerId && ownsName(db, ownerId, name, productId)) throw new AppError('duplicate')
@@ -126,8 +153,7 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
 
   delete: async ({ productId, expectedUpdatedAt, now, userId, allowedRoles, audit }) =>
     atomic(db, () => {
-      const actor = members(db).get(memberKey(productId, userId))
-      if (!actor || !allowedRoles.includes(actor.role)) throw new AppError('stale_update')
+      assertActorRole(db, productId, userId, allowedRoles)
       const product = assertCurrent(activeProduct(db, productId), expectedUpdatedAt)
       product.deletedAt = now
       product.updatedAt = nextUpdatedAt(now, product.updatedAt)

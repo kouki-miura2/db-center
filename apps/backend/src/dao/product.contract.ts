@@ -99,6 +99,7 @@ export const productDaoContract = (setup: () => Promise<ProductDaoFixture>) => {
       { userId: 'u1', name: 'u1', role: 'owner', joinedAt: 1000 },
       { userId: 'u2', name: 'u2', role: 'member', joinedAt: 1000 },
     ])
+    expect(scope?.connections).toEqual([])
     expect(await f.dao.findScope('missing')).toBeNull()
     await f.markDeleted('p1')
     expect(await f.dao.findScope('p1')).toBeNull()

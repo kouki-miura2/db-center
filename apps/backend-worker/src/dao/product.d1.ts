@@ -14,6 +14,7 @@ import {
   runBatch,
   staleGuard,
 } from './batch.ts'
+import { toConnectionRecord, type ConnectionRow } from './connection.d1.ts'
 
 interface ProductRow {
   id: string
@@ -54,7 +55,10 @@ const OWNER_HAS_NAME = `EXISTS (
     AND m.user_id = (SELECT user_id FROM product_members WHERE product_id = ? AND role = 'owner')
 )`
 
-/** Fails the batch with `stale_update` if the actor lost the role since the service checked it. */
+/**
+ * Fails the batch with `stale_update` if the actor lost the role since the service checked it, or
+ * the product was deleted meanwhile (its members stay until it's purged).
+ */
 export const actorHasRole = (
   db: D1Database,
   productId: string,
@@ -64,11 +68,17 @@ export const actorHasRole = (
   guard(
     db,
     'stale_update',
-    `NOT EXISTS (SELECT 1 FROM product_members WHERE product_id = ? AND user_id = ? AND role IN (${allowedRoles.map(() => '?').join(', ')}))`,
+    `NOT EXISTS (SELECT 1 FROM product_members m JOIN products p ON p.id = m.product_id WHERE m.product_id = ? AND m.user_id = ? AND p.deleted_at IS NULL AND m.role IN (${allowedRoles.map(() => '?').join(', ')}))`,
     productId,
     userId,
     ...allowedRoles,
   )
+
+/** Bumps the product scope's revision, returning it. */
+export const bumpProductRevision = (db: D1Database, productId: string) =>
+  db
+    .prepare('UPDATE products SET revision = revision + 1 WHERE id = ? RETURNING revision')
+    .bind(productId)
 
 export const productsRevisionOf = (db: D1Database, userId: string) =>
   db.prepare('SELECT products_revision FROM users WHERE id = ?').bind(userId)
@@ -87,13 +97,14 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
 
   findScope: async (productId) => {
     // One batch is one transaction, so the members match the product's revision.
-    const [product, members] = await db.batch([
+    const [product, members, connections] = await db.batch([
       db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').bind(productId),
       db
         .prepare(
           'SELECT product_members.user_id, users.name, product_members.role, product_members.joined_at FROM product_members JOIN users ON users.id = product_members.user_id WHERE product_members.product_id = ?',
         )
         .bind(productId),
+      db.prepare('SELECT * FROM connections WHERE product_id = ?').bind(productId),
     ])
     const row = product?.results[0] as ProductRow | undefined
     if (!row) return null
@@ -106,6 +117,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
         role: member.role,
         joinedAt: member.joined_at,
       })),
+      connections: ((connections?.results ?? []) as ConnectionRow[]).map(toConnectionRecord),
     }
   },
 

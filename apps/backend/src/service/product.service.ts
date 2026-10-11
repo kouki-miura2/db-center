@@ -9,6 +9,7 @@ import type {
   Product,
   ProductRepository,
 } from '../repository/product.repository.ts'
+import { type ConnectionView, toConnectionView } from './connection.service.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
 
 /** One row of the product list ("参照 > データの取得とキャッシュ": プロダクト一覧). */
@@ -46,6 +47,8 @@ export interface ProductScopeView {
   product: ProductView
   role: Role
   members: MemberView[]
+  /** In their display order; passwords are never included. */
+  connections: ConnectionView[]
 }
 
 /** A cacheable scope: unchanged when the client's revision is current, otherwise all of it. */
@@ -179,6 +182,9 @@ export const createProductService = (deps: { products: ProductRepository }): Pro
         product: toView(scope.product),
         role,
         members: scope.members.toSorted(byRoleThenJoined).map((member) => ({ ...member })),
+        connections: scope.connections
+          .toSorted((a, b) => a.sortOrder - b.sortOrder)
+          .map(toConnectionView),
       },
     }
   },

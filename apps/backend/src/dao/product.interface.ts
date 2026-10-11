@@ -1,6 +1,7 @@
 import type { Target } from 'utils'
 
 import type { AuditLogRecord } from './audit-log.interface.ts'
+import type { ConnectionRecord } from './connection.interface.ts'
 
 export type Role = 'owner' | 'manager' | 'member'
 
@@ -30,16 +31,20 @@ export interface MemberRecord {
   joinedAt: number
 }
 
+export interface ProductScopeRecord {
+  product: ProductRecord
+  members: MemberRecord[]
+  connections: ConnectionRecord[]
+}
+
 export interface ProductDao {
   /** The user's membership of the product, or null if they aren't a member or it's deleted. */
   findMembership: (productId: string, userId: string) => Promise<MembershipRecord | null>
   /**
-   * The product scope: the product and its members, read together so they match its revision.
-   * Null if the product is deleted or doesn't exist.
+   * The product scope: the product, its members and connections, read together so they match its
+   * revision. Null if the product is deleted or doesn't exist.
    */
-  findScope: (
-    productId: string,
-  ) => Promise<{ product: ProductRecord; members: MemberRecord[] } | null>
+  findScope: (productId: string) => Promise<ProductScopeRecord | null>
   /** The user's product list revision (`users.products_revision`), reading that one row only. */
   findProductsRevision: (userId: string) => Promise<number | null>
   /** The user's product list and its revision, read together so they match. */
