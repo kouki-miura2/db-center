@@ -71,6 +71,12 @@ export const objectDaoContract = (
     ])
     expect((await f.dao.findScope('v1'))!.objects).toHaveLength(2)
     expect((await f.dao.findContext('v1'))!.version.definitionBytes).toBe(4)
+    // Current: an empty delta. Ahead of the server (not a revision it gave out): the full scope.
+    const current = removed.revisions.version
+    expect((await f.dao.findScope('v1', current))!.objects).toEqual([])
+    const ahead = (await f.dao.findScope('v1', current + 1))!.objects
+    expect(ahead).toHaveLength(2)
+    expect(ahead.some((o) => o.deletedAt !== null)).toBe(false)
   })
   test('limits, duplicate names, and changed membership roll back every side effect', async () => {
     const f = await arrange()

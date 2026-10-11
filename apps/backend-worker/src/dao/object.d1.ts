@@ -45,36 +45,36 @@ const toRecord = (v: ObjectSqlRow): ObjectRecord => ({
   revision: v.revision,
   deletedAt: v.deleted_at,
 })
+// Whether revision ?2 can be answered with a delta: between the version's compaction and its
+// current revision. Params: ?1 version ID, ?2 the client's revision (NULL: none).
+const DELTA = '?2 IS NOT NULL AND ?2 >= v.compacted_revision AND ?2 <= v.revision'
+
 export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
   findContext: async (id) => {
     const row = await db.prepare(CONTEXT_SQL).bind(id).first<ContextRow>()
     return row ? toContext(row) : null
   },
+  // A delta (rows changed after `since`, deleted ones included) while `since` is within what the
+  // version can still answer, otherwise every row that isn't deleted. Two statements, so each
+  // walks its own index range; the version row is the outer loop, so the condition on it leaves
+  // the other statement empty without reading objects. One batch, so the rows match the context.
   findScope: async (id, since) => {
-    const [context, rows] = await db.batch([
+    const [context, delta, full] = await db.batch([
       db.prepare(CONTEXT_SQL).bind(id),
       db
         .prepare(
-          'SELECT o.* FROM objects o JOIN versions v ON v.id = o.version_id WHERE o.version_id = ? AND ((? IS NOT NULL AND ? >= v.compacted_revision AND ? <= v.revision AND o.revision > ?) OR ((? IS NULL OR ? < v.compacted_revision OR ? > v.revision) AND o.deleted_at IS NULL))',
+          `SELECT o.* FROM versions v JOIN objects o ON o.version_id = v.id AND o.revision > ?2 WHERE v.id = ?1 AND ${DELTA}`,
         )
-        .bind(
-          id,
-          since ?? null,
-          since ?? null,
-          since ?? null,
-          since ?? null,
-          since ?? null,
-          since ?? null,
-          since ?? null,
-        ),
+        .bind(id, since ?? null),
+      db
+        .prepare(
+          `SELECT o.* FROM versions v JOIN objects o ON o.version_id = v.id WHERE v.id = ?1 AND o.deleted_at IS NULL AND NOT (${DELTA})`,
+        )
+        .bind(id, since ?? null),
     ])
     const row = context?.results[0] as ContextRow | undefined
-    return row
-      ? {
-          context: toContext(row),
-          objects: ((rows?.results ?? []) as ObjectSqlRow[]).map(toRecord),
-        }
-      : null
+    const rows = [...(delta?.results ?? []), ...(full?.results ?? [])] as ObjectSqlRow[]
+    return row ? { context: toContext(row), objects: rows.map(toRecord) } : null
   },
   save: async (input) => {
     const { record: r, context: c } = input
