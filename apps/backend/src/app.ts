@@ -22,6 +22,7 @@ import { ddlOptionsSchema } from './service/ddl.ts'
 import { objectInputSchema } from './service/definition.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
+import { migrationOptionsSchema } from './service/migration.ts'
 import type { ObjectService } from './service/object.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import type { RevisionService } from './service/revision.service.ts'
@@ -762,6 +763,26 @@ export const createApp = (deps: AppDependencies) => {
           ),
       )
       // The audit log, newest first: `before` pages back, `after` gets what's new since.
+      .post(
+        '/databases/:databaseId/migration-script',
+        validate('param', z.object({ databaseId: z.uuid() })),
+        validate(
+          'json',
+          z.strictObject({
+            fromVersionId: z.uuid(),
+            toVersionId: z.uuid(),
+            options: migrationOptionsSchema.default(() => migrationOptionsSchema.parse({})),
+          }),
+        ),
+        async (c) =>
+          c.json(
+            await deps.scriptService.migration({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
       .get(
         '/products/:productId/audit-logs',
         validate('param', productId),

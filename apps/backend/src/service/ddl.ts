@@ -22,6 +22,7 @@ export interface SqlStep {
   sql: string
   transactional: boolean
   beforeTransaction?: boolean
+  phase?: 'constraint'
 }
 export const invalidDdl = (message: string): never => {
   throw new AppError('invalid_input', { message })

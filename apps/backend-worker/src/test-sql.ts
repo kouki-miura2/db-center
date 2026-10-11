@@ -15,7 +15,8 @@ import { createSqlValidator } from './sql-validator.ts'
 
 /** Each planned statement is its own protocol command, like psql executing a script file. */
 export const applyPostgresSteps = async (db: PGlite, steps: SqlStep[], transaction = true) => {
-  const inside = steps.filter((v) => v.transactional)
+  for (const step of steps.filter((v) => v.beforeTransaction)) await db.exec(step.sql)
+  const inside = steps.filter((v) => v.transactional && !v.beforeTransaction)
   if (transaction && inside.length) await db.exec('BEGIN;')
   try {
     for (const step of inside) await db.exec(step.sql)
@@ -24,7 +25,8 @@ export const applyPostgresSteps = async (db: PGlite, steps: SqlStep[], transacti
     if (transaction && inside.length) await db.exec('ROLLBACK;')
     throw error
   }
-  for (const step of steps.filter((v) => !v.transactional)) await db.exec(step.sql)
+  for (const step of steps.filter((v) => !v.transactional && !v.beforeTransaction))
+    await db.exec(step.sql)
 }
 
 const require = createRequire(import.meta.url)

@@ -204,6 +204,7 @@ export const generatePostgresDdl = async (
           : statement,
         !concurrentReference,
       )
+      steps.at(-1)!.phase = 'constraint'
     }
   }
   for (const object of sequences) {
