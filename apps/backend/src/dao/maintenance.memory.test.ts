@@ -1,4 +1,5 @@
 import type { AuditLogRecord } from './audit-log.interface.ts'
+import type { VersionRecord } from './database.interface.ts'
 import type { InvitationRecord } from './invitation.interface.ts'
 import { maintenanceDaoContract } from './maintenance.contract.ts'
 import { createMaintenanceMemoryDao } from './maintenance.memory.ts'
@@ -60,5 +61,37 @@ maintenanceDaoContract(async () => {
       ),
     productRevision: async (productId) =>
       memoryTable<ProductRecord>(db, 'products').get(productId)?.revision ?? 0,
+    // Only the fields the cleanup reads; the rest of each row doesn't matter here.
+    addDatabase: async (id, productId) => {
+      memoryTable(db, 'databases').set(id, { id, productId, deletedAt: null })
+      memoryTable(db, 'versions').set(`v-${id}`, {
+        id: `v-${id}`,
+        databaseId: id,
+        sourceVersionId: null,
+      })
+      memoryTable(db, 'objects').set(`o-${id}`, { id: `o-${id}`, versionId: `v-${id}` })
+    },
+    addVersion: async (id, databaseId, sourceVersionId) => {
+      memoryTable(db, 'versions').set(id, { id, databaseId, sourceVersionId })
+    },
+    addConnection: async (id, productId) => {
+      memoryTable(db, 'connections').set(id, { id, productId })
+    },
+    addMember: async (productId) => {
+      memoryTable(db, 'product_members').set(`${productId}:u1`, { productId, userId: 'u1' })
+    },
+    addDeployment: async ({ id, productId, databaseId, connectionId, status }) => {
+      memoryTable(db, 'deployments').set(id, { id, productId, databaseId, connectionId, status })
+    },
+    markDeleted: async (kind, id, deletedAt) => {
+      const row = memoryTable<{ deletedAt: number | null }>(
+        db,
+        kind === 'product' ? 'products' : 'databases',
+      ).get(id)
+      if (row) row.deletedAt = deletedAt
+    },
+    count: async (table) => memoryTable(db, table).size,
+    sourceVersionOf: async (versionId) =>
+      memoryTable<VersionRecord>(db, 'versions').get(versionId)?.sourceVersionId ?? null,
   }
 })

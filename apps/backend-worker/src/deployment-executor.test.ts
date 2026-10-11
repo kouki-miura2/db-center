@@ -100,7 +100,11 @@ export const executorFixture = async () => {
   const repository = createDeploymentRepository(createDeploymentMemoryDao(db))
   const executor = createDeploymentExecutor({
     deployments: repository,
-    storage: { putOnce: async () => {}, get: async (key) => saved.get(key) ?? null },
+    storage: {
+      putOnce: async () => {},
+      get: async (key) => saved.get(key) ?? null,
+      deleteAll: async () => {},
+    },
     connections: { findCredentials: async () => conn } as unknown as ConnectionRepository,
     objects: objectRepository,
     secrets: { encrypt: async () => '', decrypt: async () => '' },
@@ -243,6 +247,7 @@ const migrationFixture = async () => {
         f.saved.set(key, value)
       },
       get: async (key) => f.saved.get(key) ?? null,
+      deleteAll: async () => {},
     },
     workflow: { start: async () => {} },
     inspection: {

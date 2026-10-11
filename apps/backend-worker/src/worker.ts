@@ -169,6 +169,7 @@ let app: ReturnType<typeof buildApp> | undefined
 const buildMaintenance = (env: WorkerEnv) =>
   createMaintenanceService({
     maintenance: createMaintenanceRepository(createMaintenanceD1Dao(env.DB)),
+    storage: env.DEPLOYMENT_SQL ? createDeploymentStorage(env.DEPLOYMENT_SQL) : undefined,
   })
 
 export default {

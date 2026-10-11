@@ -10,6 +10,8 @@ test('passes every cleanup through to the DAO', async () => {
     deletePasscodeFailures: vi.fn(async () => 3),
     redactInvitationEmails: vi.fn(async () => 4),
     deleteAuditLogs: vi.fn(async () => 5),
+    findPurgeable: vi.fn(async () => []),
+    purge: vi.fn(async () => true),
   }
   const repository = createMaintenanceRepository(dao)
 

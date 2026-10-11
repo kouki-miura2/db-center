@@ -17,6 +17,12 @@ const deleteUpTo = async (
   return result.meta.changes
 }
 
+// The table of each kind, and the deployments column pointing at it.
+const PURGE = {
+  product: { table: 'products', owner: 'product_id' },
+  database: { table: 'databases', owner: 'database_id' },
+} as const
+
 /** D1 `MaintenanceDao`. */
 export const createMaintenanceD1Dao = (db: D1Database): MaintenanceDao => ({
   deleteExpiredSessions: (cutoff, limit) => deleteUpTo(db, 'sessions', 'expires_at', cutoff, limit),
@@ -66,4 +72,44 @@ export const createMaintenanceD1Dao = (db: D1Database): MaintenanceDao => ({
   },
 
   deleteAuditLogs: (cutoff, limit) => deleteUpTo(db, 'audit_logs', 'created_at', cutoff, limit),
+
+  findPurgeable: async ({ kind, cutoff, after, limit }) => {
+    const { table, owner } = PURGE[kind]
+    const { results } = await db
+      .prepare(
+        `SELECT id FROM ${table} WHERE deleted_at IS NOT NULL AND deleted_at <= ? AND id > ? ORDER BY id LIMIT ?`,
+      )
+      .bind(cutoff, after ?? '', limit)
+      .all<{ id: string }>()
+    if (results.length === 0) return []
+    const deployments = await db
+      .prepare(
+        `SELECT ${owner} AS owner, id, status FROM deployments WHERE ${owner} IN (SELECT value FROM json_each(?)) ORDER BY id`,
+      )
+      .bind(JSON.stringify(results.map((row) => row.id)))
+      .all<{ owner: string; id: string; status: string }>()
+    return results.map((row) => {
+      const under = deployments.results.filter((deployment) => deployment.owner === row.id)
+      return {
+        id: row.id,
+        deploymentIds: under.map((deployment) => deployment.id),
+        running: under.some((deployment) => deployment.status === 'running'),
+      }
+    })
+  },
+
+  // ON DELETE CASCADE removes everything under the row in this one statement. D1 counts the
+  // cascaded rows in `meta.changes` too, so RETURNING tells whether the row itself went.
+  purge: async ({ kind, id, cutoff }) => {
+    const { table, owner } = PURGE[kind]
+    const { results } = await db
+      .prepare(
+        `DELETE FROM ${table} WHERE id = ? AND deleted_at IS NOT NULL AND deleted_at <= ?
+          AND NOT EXISTS (SELECT 1 FROM deployments WHERE ${owner} = ? AND status = 'running')
+          RETURNING id`,
+      )
+      .bind(id, cutoff, id)
+      .all()
+    return results.length === 1
+  },
 })

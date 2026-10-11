@@ -103,7 +103,11 @@ beforeEach(() => {
         validateDataType: async () => {},
         validateDdl: async () => {},
       },
-      storage: { putOnce: async () => {}, get: async (key) => deploymentSql.get(key) ?? null },
+      storage: {
+        putOnce: async () => {},
+        get: async (key) => deploymentSql.get(key) ?? null,
+        deleteAll: async () => {},
+      },
     }),
     inspectionService: createInspectionService({
       products,

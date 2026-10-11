@@ -10,7 +10,15 @@ export const createDeploymentStorage = (bucket: R2Bucket): DeploymentStorage => 
     if (!result) throw new AppError('invalid_state')
   },
   get: async (key) => (await bucket.get(key))?.text() ?? null,
+  deleteAll: async (keys) => {
+    // R2 deletes at most 1,000 keys per call.
+    for (let start = 0; start < keys.length; start += R2_DELETE_KEYS) {
+      await bucket.delete(keys.slice(start, start + R2_DELETE_KEYS))
+    }
+  },
 })
+
+const R2_DELETE_KEYS = 1000
 export const createDeploymentWorkflow = (
   workflow: Workflow<{ deploymentId: string }>,
 ): DeploymentWorkflow => ({

@@ -56,7 +56,11 @@ test('receipt freezes SQL once, returns same receipt on resend and protects mism
     inspection: {
       inspect: async () => ({ supported: true, empty: true }),
     } as unknown as InspectionService,
-    storage: { putOnce, get: async (key: string) => saved.get(key) ?? null },
+    storage: {
+      putOnce,
+      get: async (key: string) => saved.get(key) ?? null,
+      deleteAll: async () => {},
+    },
     workflow: { start },
   }
   const service = createDeploymentService(deps),
