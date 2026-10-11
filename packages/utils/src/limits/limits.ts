@@ -73,4 +73,6 @@ export const LIMITS = {
   postgresStatementTimeoutSeconds: 60,
   /** Maximum duration of the one Workflow execution step, in minutes. Provisional. */
   deploymentWorkflowTimeoutMinutes: 60,
+  /** How long after it was accepted a deployment still preparing or queued is reconciled by the scheduled job, in minutes (one still executing waits for the Workflow timeout). Provisional. */
+  deploymentReconcileMinutes: 10,
 } as const

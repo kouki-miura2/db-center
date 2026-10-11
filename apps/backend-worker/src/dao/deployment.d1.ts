@@ -1,4 +1,5 @@
 import type { DeploymentDao, DeploymentRecord } from 'backend/src/dao/deployment.interface.ts'
+import { AppError } from 'backend/src/error.ts'
 
 import { guard, insertAuditLog, runBatch, staleGuard } from './batch.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
@@ -39,6 +40,35 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
       .first<Row>()
     return r ? toDeploymentRecord(r) : null
   }
+  // Ends a running deployment (and `condition`, extra WHERE terms with their params, holds): its
+  // status, the database and product revisions and the audit log, in one batch.
+  const close = (
+    r: DeploymentRecord,
+    status: 'succeeded' | 'failed',
+    log: string,
+    now: number,
+    condition: string,
+    ...params: unknown[]
+  ) =>
+    runBatch(db, [
+      db
+        .prepare(
+          `UPDATE deployments SET status=?,phase='finished',log=?,finished_at=? WHERE id=? AND status='running'${condition}`,
+        )
+        .bind(status, log, now, r.id, ...params),
+      staleGuard(db),
+      db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
+      bumpProductRevision(db, r.productId),
+      insertAuditLog(db, {
+        id: crypto.randomUUID(),
+        productId: r.productId,
+        userId: r.executedBy,
+        targetType: 'deployment',
+        action: status,
+        summary: r.connectionName,
+        createdAt: now,
+      }),
+    ])
   const transition = async (id: string, from: string, to: string) => {
     const r = await db
       .prepare("UPDATE deployments SET phase=? WHERE id=? AND status='running' AND phase=?")
@@ -130,28 +160,38 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
       const r = await find('SELECT * FROM deployments WHERE id=?', id)
       if (!r || r.status !== 'running') return
       try {
-        await runBatch(db, [
-          db
-            .prepare(
-              "UPDATE deployments SET status=?,phase='finished',log=?,finished_at=? WHERE id=? AND status='running'",
-            )
-            .bind(status, log, now, id),
-          staleGuard(db),
-          db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
-          bumpProductRevision(db, r.productId),
-          insertAuditLog(db, {
-            id: crypto.randomUUID(),
-            productId: r.productId,
-            userId: r.executedBy,
-            targetType: 'deployment',
-            action: status,
-            summary: r.connectionName,
-            createdAt: now,
-          }),
-        ])
+        await close(r, status, log, now, '')
       } catch (error) {
         if ((await find('SELECT * FROM deployments WHERE id=?', id))?.status === 'running')
           throw error
+      }
+    },
+    listRunning: async (startedBefore) =>
+      (
+        await db
+          .prepare(
+            "SELECT * FROM deployments WHERE status='running' AND started_at<=? ORDER BY started_at,id",
+          )
+          .bind(startedBefore)
+          .all<Row>()
+      ).results.map(toDeploymentRecord),
+    abandon: async ({ id, phase, executedCount, log, now }) => {
+      const r = await find('SELECT * FROM deployments WHERE id=?', id)
+      if (!r || r.status !== 'running') return false
+      try {
+        await close(
+          r,
+          'failed',
+          log,
+          now,
+          ' AND phase=? AND executed_count=?',
+          phase,
+          executedCount,
+        )
+        return true
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'stale_update') return false
+        throw error
       }
     },
   }

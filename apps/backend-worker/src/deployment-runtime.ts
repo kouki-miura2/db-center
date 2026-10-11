@@ -19,10 +19,23 @@ export const createDeploymentStorage = (bucket: R2Bucket): DeploymentStorage => 
 })
 
 const R2_DELETE_KEYS = 1000
+const FINISHED: InstanceStatus['status'][] = ['complete', 'errored', 'terminated']
+
 export const createDeploymentWorkflow = (
   workflow: Workflow<{ deploymentId: string }>,
 ): DeploymentWorkflow => ({
   start: async (deploymentId) => {
     await workflow.create({ id: deploymentId, params: { deploymentId } })
+  },
+  status: async (deploymentId) => {
+    let instance: WorkflowInstance
+    try {
+      instance = await workflow.get(deploymentId)
+    } catch {
+      return 'missing'
+    }
+    // Anything not plainly over (`unknown` included) counts as still active.
+    const { status } = await instance.status()
+    return FINISHED.includes(status) ? 'finished' : 'active'
   },
 })

@@ -33,5 +33,6 @@ test('matches the spec table', () => {
     postgresConnectTimeoutSeconds: 10,
     postgresStatementTimeoutSeconds: 60,
     deploymentWorkflowTimeoutMinutes: 60,
+    deploymentReconcileMinutes: 10,
   })
 })

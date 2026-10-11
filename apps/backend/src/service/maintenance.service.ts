@@ -1,13 +1,17 @@
 import { createLogger, LIMITS } from 'utils'
 
+import type { DeploymentRecord } from '../dao/deployment.interface.ts'
 import type { PurgeKind } from '../dao/maintenance.interface.ts'
 import {
   type DeploymentStorage,
   deploymentStorageKeys,
+  type DeploymentWorkflow,
 } from '../repository/deployment-runtime.interface.ts'
+import type { DeploymentRepository } from '../repository/deployment.repository.ts'
 import type { MaintenanceRepository } from '../repository/maintenance.repository.ts'
 
-const HOUR = 60 * 60 * 1000
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /** What replaces an expired invitation's email in its audit log entry ("データ保持・プライバシー"). */
@@ -33,10 +37,25 @@ export interface MaintenanceService {
   runDaily: (now: number) => Promise<Record<string, TaskReport>>
 }
 
+// A deployment's progress log (JSON object), or nothing.
+const parseLog = (log: string | null): Record<string, unknown> => {
+  try {
+    const value: unknown = log === null ? null : JSON.parse(log)
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
 export const createMaintenanceService = (deps: {
   maintenance: MaintenanceRepository
   /** Where deployments keep their SQL; unset when automatic execution isn't configured. */
   storage?: DeploymentStorage
+  deployments: DeploymentRepository
+  /** Unset when automatic execution isn't configured. */
+  workflow?: DeploymentWorkflow
 }): MaintenanceService => {
   const logger = createLogger({ format: 'json' })
   const m = deps.maintenance
@@ -107,6 +126,68 @@ export const createMaintenanceService = (deps: {
     }
   }
 
+  /**
+   * Settles a deployment left running. Nothing is run again and nothing is marked succeeded: a
+   * deployment whose SQL may have run ends failed with `requiresInspection`, its progress log kept,
+   * so the result is checked against the target database (`_dbcenter.version`) by hand.
+   */
+  const reconcileOne = async (r: DeploymentRecord, now: number) => {
+    const fail = async (code: string, requiresInspection: boolean) => {
+      const previous = parseLog(r.log)
+      const log = JSON.stringify({ ...previous, code, requiresInspection, reconciled: true })
+      const done = await deps.deployments.abandon({
+        id: r.id,
+        phase: r.phase,
+        executedCount: r.executedCount,
+        log,
+        now,
+      })
+      return done ? `failed:${code}` : 'moved_on'
+    }
+    // Accepted, but its plan wasn't queued: no Workflow, no SQL.
+    if (r.phase === 'preparing') return fail('preparation_failed', false)
+    const workflow = deps.workflow ? await deps.workflow.status(r.id) : 'missing'
+    if (workflow === 'active') return 'waiting'
+    if (r.phase === 'queued') {
+      if (!deps.workflow) return fail('workflow_not_configured', false)
+      // The start was lost. The deployment isn't claimed yet, so starting it under the same ID
+      // runs it exactly once (a second start of an existing ID is refused).
+      if (workflow === 'missing') {
+        await deps.workflow.start(r.id)
+        return 'restarted'
+      }
+      // The Workflow ended without claiming it: none of its SQL ran.
+      return fail('workflow_failed', false)
+    }
+    // Executing. A Workflow that can't be found may still be within its time limit.
+    if (
+      workflow === 'missing' &&
+      r.startedAt > now - LIMITS.deploymentWorkflowTimeoutMinutes * MINUTE
+    )
+      return 'waiting'
+    return fail('outcome_unknown', true)
+  }
+
+  const reconcile = (now: number) => async (report: TaskReport) => {
+    report.skipped = 0
+    report.failed = 0
+    const records = await deps.deployments.listRunning(
+      now - LIMITS.deploymentReconcileMinutes * MINUTE,
+    )
+    for (const r of records) {
+      const fields = { deploymentId: r.id, phase: r.phase, executedCount: r.executedCount }
+      try {
+        const outcome = await reconcileOne(r, now)
+        if (outcome === 'waiting' || outcome === 'moved_on') report.skipped += 1
+        else report.processed += 1
+        logger.info('deployment reconciled', { ...fields, outcome })
+      } catch (error) {
+        report.failed += 1
+        logger.error('deployment reconciliation failed', { ...fields, error: String(error) })
+      }
+    }
+  }
+
   return {
     runDaily: async (now) => {
       const reports: Record<string, TaskReport> = {}
@@ -148,6 +229,7 @@ export const createMaintenanceService = (deps: {
       const deletedCutoff = now - LIMITS.deletedRetentionDays * DAY
       await run(reports, 'purgedDatabases', purge('database', deletedCutoff))
       await run(reports, 'purgedProducts', purge('product', deletedCutoff))
+      await run(reports, 'reconciledDeployments', reconcile(now))
       return reports
     },
   }

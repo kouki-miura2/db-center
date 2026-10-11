@@ -12,4 +12,10 @@ export const deploymentStorageKeys = (deploymentId: string) => [
 ]
 export interface DeploymentWorkflow {
   start: (deploymentId: string) => Promise<void>
+  /**
+   * Where the deployment's Workflow instance is: still `active` (queued, running, paused or not
+   * known yet), `finished` (complete, errored or terminated) or `missing` (never created, or it
+   * couldn't be looked up).
+   */
+  status: (deploymentId: string) => Promise<'active' | 'finished' | 'missing'>
 }

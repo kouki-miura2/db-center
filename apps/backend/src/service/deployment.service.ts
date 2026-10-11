@@ -335,7 +335,7 @@ export const createDeploymentService = (deps: {
         try {
           await deps.workflow.start(id)
         } catch {
-          /* step 8 reconciles by this same ID */
+          /* The scheduled job (maintenance.service.ts) starts it again under this same ID. */
         }
       }
       return deploymentView((await deps.deployments.findById(id))!)

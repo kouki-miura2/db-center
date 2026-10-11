@@ -3,7 +3,29 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises'
 import { expect, test } from 'vite-plus/test'
 import { getPlatformProxy } from 'wrangler'
 
-import { createDeploymentStorage } from './deployment-runtime.ts'
+import { createDeploymentStorage, createDeploymentWorkflow } from './deployment-runtime.ts'
+
+// A Workflow binding whose one instance (if any) reports `status`.
+const workflowWith = (status: InstanceStatus['status'] | null) =>
+  ({
+    get: async () => {
+      if (status === null) throw new Error('instance.not_found')
+      return { status: async () => ({ status }) }
+    },
+  }) as unknown as Workflow<{ deploymentId: string }>
+
+test.each([
+  [null, 'missing'],
+  ['queued', 'active'],
+  ['running', 'active'],
+  ['waiting', 'active'],
+  ['unknown', 'active'],
+  ['complete', 'finished'],
+  ['errored', 'finished'],
+  ['terminated', 'finished'],
+] as const)('a Workflow instance that is %s counts as %s', async (status, expected) => {
+  expect(await createDeploymentWorkflow(workflowWith(status)).status('x1')).toBe(expected)
+})
 
 test(
   'real R2 storage never overwrites an execution SQL artifact, and deletes any number of keys',

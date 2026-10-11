@@ -12,6 +12,7 @@ export const memoryDeployments = (db: MemoryDb, databaseId: string) =>
     .map((v) => ({ ...v }))
 export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
   const rows = () => memoryTable<DeploymentRecord>(db, 'deployments')
+  const close = closeDeployment(db)
   const transition = async (
     id: string,
     from: DeploymentRecord['phase'],
@@ -86,22 +87,42 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
       atomic(db, () => {
         const r = rows().get(id)
         if (!r || r.status !== 'running') return
-        r.status = status
-        r.phase = 'finished'
-        r.log = log
-        r.finishedAt = now
-        const database = memoryTable<DatabaseRecord>(db, 'databases').get(r.databaseId)
-        if (database) database.revision++
-        bumpProductRevision(db, r.productId)
-        appendAuditLog(db, {
-          id: crypto.randomUUID(),
-          productId: r.productId,
-          userId: r.executedBy,
-          targetType: 'deployment',
-          action: status,
-          summary: r.connectionName,
-          createdAt: now,
-        })
+        close(r, status, log, now)
+      }),
+    listRunning: async (startedBefore) =>
+      [...rows().values()]
+        .filter((r) => r.status === 'running' && r.startedAt <= startedBefore)
+        .toSorted((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
+        .map((r) => ({ ...r })),
+    abandon: async ({ id, phase, executedCount, log, now }) =>
+      atomic(db, () => {
+        const r = rows().get(id)
+        if (!r || r.status !== 'running' || r.phase !== phase || r.executedCount !== executedCount)
+          return false
+        close(r, 'failed', log, now)
+        return true
       }),
   }
 }
+
+// A running deployment's end: its status, the database and product revisions, the audit log.
+const closeDeployment =
+  (db: MemoryDb) =>
+  (r: DeploymentRecord, status: 'succeeded' | 'failed', log: string, now: number) => {
+    r.status = status
+    r.phase = 'finished'
+    r.log = log
+    r.finishedAt = now
+    const database = memoryTable<DatabaseRecord>(db, 'databases').get(r.databaseId)
+    if (database) database.revision++
+    bumpProductRevision(db, r.productId)
+    appendAuditLog(db, {
+      id: crypto.randomUUID(),
+      productId: r.productId,
+      userId: r.executedBy,
+      targetType: 'deployment',
+      action: status,
+      summary: r.connectionName,
+      createdAt: now,
+    })
+  }

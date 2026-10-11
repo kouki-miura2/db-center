@@ -249,7 +249,7 @@ const migrationFixture = async () => {
       get: async (key) => f.saved.get(key) ?? null,
       deleteAll: async () => {},
     },
-    workflow: { start: async () => {} },
+    workflow: { start: async () => {}, status: async () => 'active' },
     inspection: {
       inspect: async () => ({
         ...(await inspectPostgres(session)),

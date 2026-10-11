@@ -90,4 +90,41 @@ export const deploymentDaoContract = (
     expect(await f.dao.findById(r.id)).toMatchObject({ status: 'failed', finishedAt: 2000 })
     expect(await f.audits()).toBe(2)
   })
+  test('lists running deployments and abandons one only as it was read', async () => {
+    const f = await setup(),
+      r = { ...deploymentRecord(), startedAt: 1000 }
+    await accept(f.dao, r)
+    expect((await f.dao.listRunning(999)).map((v) => v.id)).toEqual([])
+    expect((await f.dao.listRunning(1000)).map((v) => v.id)).toEqual([r.id])
+    await f.dao.queue(r.id)
+    await f.dao.claim(r.id)
+    await f.dao.progress(r.id, 3, '{"committed":true}')
+    const revision = await f.revision()
+    const abandon = (phase: DeploymentRecord['phase'], executedCount: number) =>
+      f.dao.abandon({
+        id: r.id,
+        phase,
+        executedCount,
+        log: '{"code":"outcome_unknown"}',
+        now: 5000,
+      })
+
+    // The executor moved on since it was read: nothing changes.
+    expect(await abandon('queued', 0)).toBe(false)
+    expect(await abandon('executing', 2)).toBe(false)
+    expect(await f.revision()).toBe(revision)
+
+    expect(await abandon('executing', 3)).toBe(true)
+    expect(await f.dao.findById(r.id)).toMatchObject({
+      status: 'failed',
+      phase: 'finished',
+      finishedAt: 5000,
+      executedCount: 3,
+      log: '{"code":"outcome_unknown"}',
+    })
+    expect(await f.revision()).toBe(revision + 1)
+    expect(await f.audits()).toBe(2)
+    expect(await abandon('executing', 3)).toBe(false)
+    expect(await f.dao.listRunning(5000)).toEqual([])
+  })
 }

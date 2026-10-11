@@ -61,7 +61,7 @@ test('receipt freezes SQL once, returns same receipt on resend and protects mism
       get: async (key: string) => saved.get(key) ?? null,
       deleteAll: async () => {},
     },
-    workflow: { start },
+    workflow: { start, status: async () => 'active' as const },
   }
   const service = createDeploymentService(deps),
     input = {

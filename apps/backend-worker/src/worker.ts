@@ -170,6 +170,10 @@ const buildMaintenance = (env: WorkerEnv) =>
   createMaintenanceService({
     maintenance: createMaintenanceRepository(createMaintenanceD1Dao(env.DB)),
     storage: env.DEPLOYMENT_SQL ? createDeploymentStorage(env.DEPLOYMENT_SQL) : undefined,
+    deployments: createDeploymentRepository(createDeploymentD1Dao(env.DB)),
+    workflow: env.DEPLOYMENT_WORKFLOW
+      ? createDeploymentWorkflow(env.DEPLOYMENT_WORKFLOW)
+      : undefined,
   })
 
 export default {
