@@ -24,6 +24,7 @@ import type { MemberService } from './service/member.service.ts'
 import type { ObjectService } from './service/object.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import type { RevisionService } from './service/revision.service.ts'
+import type { VersionService } from './service/version.service.ts'
 import { text, validate } from './validation.ts'
 
 export interface AuthConfig {
@@ -75,6 +76,7 @@ export interface AppDependencies {
   memberService: MemberService
   databaseService: DatabaseService
   objectService: ObjectService
+  versionService: VersionService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -95,6 +97,11 @@ const productName = text(LIMITS.productNameMaxLength).min(1)
 const target = z.enum(Object.keys(TARGETS) as [Target, ...Target[]])
 /** The `updatedAt` the client last read: the write is refused if the data changed since. */
 const expectedUpdatedAt = z.number().int().nonnegative()
+const versionChange = z.strictObject({
+  expectedUpdatedAt,
+  expectedRevision: z.number().int().positive(),
+  memo: text(LIMITS.commentMaxLength).nullable().default(null),
+})
 const connectionParams = z.object({ productId: z.uuid(), connectionId: z.uuid() })
 const memberParams = z.object({ productId: z.uuid(), userId: z.uuid() })
 const databaseParams = z.object({ productId: z.uuid(), databaseId: z.uuid() })
@@ -650,6 +657,43 @@ export const createApp = (deps: AppDependencies) => {
         async (c) =>
           c.json(
             await deps.objectService.deleteObject({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/validate',
+        validate('param', z.object({ versionId: z.uuid() })),
+        async (c) =>
+          c.json(
+            await deps.versionService.validate({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/provisional',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('json', versionChange),
+        async (c) =>
+          c.json(
+            await deps.versionService.provisional({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/revert',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('json', versionChange.extend({ acknowledgeApplied: z.boolean().default(false) })),
+        async (c) =>
+          c.json(
+            await deps.versionService.revert({
               userId: requireUser(c).id,
               ...c.req.valid('param'),
               ...c.req.valid('json'),

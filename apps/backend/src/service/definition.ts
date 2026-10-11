@@ -84,6 +84,7 @@ export const schemaDefinitionSchema = z.strictObject({
   comment: text(LIMITS.commentMaxLength).nullable().default(null),
 })
 export const tableDefinitionSchema = z.strictObject({
+  comment: text(LIMITS.commentMaxLength).nullable().default(null),
   columns: z.array(designColumnSchema).max(LIMITS.columnsPerTable),
   constraints: z.array(constraintSchema),
   indexes: z.array(indexSchema),

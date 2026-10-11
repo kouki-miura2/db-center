@@ -11,6 +11,7 @@ import { createProductRepository } from 'backend/src/repository/product.reposito
 import { createRevisionRepository } from 'backend/src/repository/revision.repository.ts'
 import { createAesGcmSecretBox } from 'backend/src/repository/secret-box.aes-gcm.ts'
 import { createUserRepository } from 'backend/src/repository/user.repository.ts'
+import { createVersionRepository } from 'backend/src/repository/version.repository.ts'
 import { createAuditLogService } from 'backend/src/service/audit-log.service.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
 import { createConnectionService } from 'backend/src/service/connection.service.ts'
@@ -20,6 +21,7 @@ import { createMemberService } from 'backend/src/service/member.service.ts'
 import { createObjectService } from 'backend/src/service/object.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 import { createRevisionService } from 'backend/src/service/revision.service.ts'
+import { createVersionService } from 'backend/src/service/version.service.ts'
 import pgWasm from 'libpg-query/wasm/libpg-query.wasm'
 import sqliteWasm from 'sql.js/dist/sql-wasm.wasm'
 
@@ -32,6 +34,7 @@ import { createObjectD1Dao } from './dao/object.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
 import { createRevisionD1Dao } from './dao/revision.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
+import { createVersionD1Dao } from './dao/version.d1.ts'
 import { createSqlValidator } from './sql-validator.ts'
 
 /**
@@ -60,6 +63,9 @@ const buildApp = (env: WorkerEnv) => {
   const development = env.DEV_LOGIN === 'true'
   const sessionCookie = development ? SESSION_COOKIE.development : SESSION_COOKIE.production
   const products = createProductRepository(createProductD1Dao(env.DB))
+  const databases = createDatabaseRepository(createDatabaseD1Dao(env.DB))
+  const objects = createObjectRepository(createObjectD1Dao(env.DB))
+  const sql = createSqlValidator({ pg: pgWasm, sqlite: sqliteWasm })
   const secrets = createAesGcmSecretBox(env.ENCRYPTION_KEY || undefined)
   return createApp({
     authService: createAuthService({
@@ -83,12 +89,19 @@ const buildApp = (env: WorkerEnv) => {
     }),
     databaseService: createDatabaseService({
       products,
-      databases: createDatabaseRepository(createDatabaseD1Dao(env.DB)),
+      databases,
     }),
     objectService: createObjectService({
       products,
-      objects: createObjectRepository(createObjectD1Dao(env.DB)),
-      sql: createSqlValidator({ pg: pgWasm, sqlite: sqliteWasm }),
+      objects,
+      sql,
+    }),
+    versionService: createVersionService({
+      products,
+      databases,
+      objects,
+      sql,
+      versions: createVersionRepository(createVersionD1Dao(env.DB)),
     }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),

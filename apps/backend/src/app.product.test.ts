@@ -1,5 +1,5 @@
 import { LIMITS, TERMS_VERSION } from 'utils'
-import { beforeEach, describe, expect, test } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test'
 
 import { createApp, SESSION_COOKIE } from './app.ts'
 import { createAuditLogMemoryDao } from './dao/audit-log.memory.ts'
@@ -12,6 +12,7 @@ import { createObjectMemoryDao } from './dao/object.memory.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import { createRevisionMemoryDao } from './dao/revision.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
+import { createVersionMemoryDao } from './dao/version.memory.ts'
 import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
@@ -22,15 +23,18 @@ import { createObjectRepository } from './repository/object.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
 import { createRevisionRepository } from './repository/revision.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
+import { createVersionRepository } from './repository/version.repository.ts'
 import { createAuditLogService } from './service/audit-log.service.ts'
 import type { AuthService } from './service/auth.service.ts'
 import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
+import type { TableDefinition } from './service/definition.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
 import { createObjectService } from './service/object.service.ts'
 import { createProductService } from './service/product.service.ts'
 import { createRevisionService } from './service/revision.service.ts'
+import { createVersionService } from './service/version.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
 // the `x-test-user` header, so one test can play several users.
@@ -89,6 +93,17 @@ beforeEach(() => {
     objectService: createObjectService({
       products,
       objects: createObjectRepository(createObjectMemoryDao(db)),
+    }),
+    versionService: createVersionService({
+      products,
+      databases: createDatabaseRepository(createDatabaseMemoryDao(db)),
+      objects: createObjectRepository(createObjectMemoryDao(db)),
+      versions: createVersionRepository(createVersionMemoryDao(db)),
+      sql: {
+        validateView: async () => ({ columns: [], dependencies: [] }),
+        validateExpression: async () => {},
+        validateDataType: async () => {},
+      },
     }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionMemoryDao(db)),
@@ -603,11 +618,15 @@ describe('members', () => {
   })
 })
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('audit log', () => {
   test('members read the log newest first, then only what’s new', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
     const { body } = await createProduct('u1', 'shop')
     const { id, updatedAt } = body.product
     addMember(id, 'u2', 'member')
+    clock.mockReturnValue(2000)
     await app.request(
       `/api/products/${id}`,
       as('u1', 'PATCH', { name: 'shop2', expectedUpdatedAt: updatedAt }),
@@ -992,7 +1011,13 @@ test('object routes isolate products, lock each object and return deletion delta
     name: 'orders',
     logicalName: null,
     schemaKey: initial.data.objects[0].objectKey,
-    definition: { columns: [], constraints: [], indexes: [], size: null, options: {} },
+    definition: {
+      columns: [],
+      constraints: [] as TableDefinition['constraints'],
+      indexes: [],
+      size: null,
+      options: {},
+    },
   }
   expect((await app.request(path, as('u3'))).status).toBe(404)
   const created = await app.request(`${path}/objects`, as('u1', 'POST', input))
@@ -1043,4 +1068,117 @@ test('object routes isolate products, lock each object and return deletion delta
   expect(
     (await (await app.request(`${path}?revision=${delta.revision}`, as('u1'))).json()).mode,
   ).toBe('unchanged')
+})
+
+test('provisional checks block errors, allow warnings and enforce revert permissions', async () => {
+  const { body: product } = await createProduct('u1', 'version-state')
+  const productId = product.product.id
+  memoryTable<MemberRow>(db, 'product_members').set(memberKey(productId, 'u2'), {
+    productId,
+    userId: 'u2',
+    role: 'member',
+    joinedAt: 0,
+  })
+  const { database } = await (
+    await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+  ).json()
+  const path = `/api/versions/${database.latestVersion.id}`
+  const scope = await (await app.request(path, as('u1'))).json()
+  const key = crypto.randomUUID()
+  const input = {
+    kind: 'table',
+    name: 'items',
+    logicalName: null,
+    schemaKey: scope.data.objects[0].objectKey,
+    definition: {
+      columns: [
+        {
+          key,
+          name: 'id',
+          logicalName: null,
+          dataType: 'bigint',
+          notNull: true,
+          defaultValue: null,
+          comment: null,
+          generation: null,
+          collation: null,
+        },
+      ],
+      constraints: [] as TableDefinition['constraints'],
+      indexes: [],
+      size: null,
+      options: {},
+    },
+  }
+  const created = await (await app.request(`${path}/objects`, as('u1', 'POST', input))).json()
+  const check = await (await app.request(`${path}/validate`, as('u2', 'POST', {}))).json()
+  expect(check.errors).toBeGreaterThan(0)
+  expect(
+    (
+      await (
+        await app.request(
+          `${path}/provisional`,
+          as('u2', 'POST', {
+            expectedRevision: check.revision,
+            expectedUpdatedAt: check.updatedAt,
+          }),
+        )
+      ).json()
+    ).transitioned,
+  ).toBe(false)
+  input.definition.constraints = [
+    { kind: 'primary_key', key: crypto.randomUUID(), name: 'items_pk', columns: [key] },
+  ]
+  await app.request(
+    `${path}/objects/${created.object.objectKey}`,
+    as('u1', 'PUT', { input, expectedUpdatedAt: created.object.updatedAt }),
+  )
+  expect(
+    (
+      await app.request(
+        `${path}/provisional`,
+        as('u2', 'POST', { expectedRevision: check.revision, expectedUpdatedAt: check.updatedAt }),
+      )
+    ).status,
+  ).toBe(409)
+  const next = await (await app.request(`${path}/validate`, as('u2', 'POST', {}))).json()
+  expect(next.errors).toBe(0)
+  expect(next.warnings).toBeGreaterThan(0)
+  const provisional = await (
+    await app.request(
+      `${path}/provisional`,
+      as('u2', 'POST', {
+        expectedRevision: next.revision,
+        expectedUpdatedAt: next.updatedAt,
+        memo: 'test',
+      }),
+    )
+  ).json()
+  expect(provisional.transitioned).toBe(true)
+  expect(
+    (await app.request(`${path}/objects`, as('u1', 'POST', { ...input, name: 'another' }))).status,
+  ).toBe(409)
+  const revert = {
+    expectedRevision: provisional.revisions.version,
+    expectedUpdatedAt: provisional.version.updatedAt,
+  }
+  expect((await app.request(`${path}/revert`, as('u2', 'POST', revert))).status).toBe(403)
+  memoryTable(db, 'deployments').set('history', {
+    id: 'history',
+    toVersionId: database.latestVersion.id,
+    connectionName: 'test',
+    status: 'succeeded',
+  })
+  const warning = await (await app.request(`${path}/revert`, as('u1', 'POST', revert))).json()
+  expect(warning.requiresConfirmation).toBe(true)
+  expect(
+    (
+      await (
+        await app.request(
+          `${path}/revert`,
+          as('u1', 'POST', { ...revert, acknowledgeApplied: true }),
+        )
+      ).json()
+    ).transitioned,
+  ).toBe(true)
 })

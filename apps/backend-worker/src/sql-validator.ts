@@ -7,6 +7,11 @@ import initPg, { type PgModule } from 'libpg-query/wasm/libpg-query.js'
 import initSql, { type SqlDatabase } from 'sql.js/dist/sql-wasm.js'
 
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`
+const containsNode = (value: unknown, name: string): boolean => {
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.some((v) => containsNode(v, name))
+  return Object.hasOwn(value, name) || Object.values(value).some((v) => containsNode(v, name))
+}
 const invalid = (error: unknown): never => {
   throw error instanceof AppError
     ? error
@@ -107,6 +112,7 @@ export const createSqlValidator = (wasm?: {
           }
           if (tree.stmts.length !== 1 || tree.stmts[0]?.stmt.SelectStmt?.targetList?.length !== 1)
             throw new Error('式を一つだけ指定してください')
+          if (containsNode(tree, 'SubLink')) throw new Error('サブクエリは式に指定できません')
           // Semantic column checks use the same resolver as views.
           analyzePostgresSelect(
             tree,
