@@ -9,6 +9,7 @@ import type { VersionRepository } from '../repository/version.repository.ts'
 import { generatePostgresDdl } from './ddl-postgres.ts'
 import { generateSqliteDdl } from './ddl-sqlite.ts'
 import { ddlOptionsSchema } from './ddl.ts'
+import { diffDesigns } from './design-diff.ts'
 import { validateDesign } from './design-validation.ts'
 import { allowedRoles, assertAllowed, type Operation } from './permission.ts'
 import { requireMembership } from './product.service.ts'
@@ -19,28 +20,8 @@ export interface VersionChangeInput {
   expectedRevision: number
   memo: string | null
 }
-const designValue = (v: DesignObject) =>
-  JSON.stringify({
-    kind: v.kind,
-    name: v.name,
-    logicalName: v.logicalName,
-    schemaKey: v.schemaKey,
-    definition: v.definition,
-  })
-export const compareDesigns = (previous: DesignObject[], current: DesignObject[]) => {
-  const before = new Map(previous.map((v) => [v.objectKey, v]))
-  const after = new Map(current.map((v) => [v.objectKey, v]))
-  const counts = { added: 0, changed: 0, deleted: 0 }
-  current.forEach((v) => {
-    const old = before.get(v.objectKey)
-    if (!old) counts.added++
-    else if (designValue(old) !== designValue(v)) counts.changed++
-  })
-  previous.forEach((v) => {
-    if (!after.has(v.objectKey)) counts.deleted++
-  })
-  return counts
-}
+export const compareDesigns = (previous: DesignObject[], current: DesignObject[]) =>
+  diffDesigns(previous, current, 'postgresql18').counts
 export const createVersionService = (deps: {
   products: ProductRepository
   databases: DatabaseRepository
