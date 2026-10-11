@@ -27,6 +27,7 @@ test('matches the spec table', () => {
     objectsPerVersion: 1000,
     columnsPerTable: 200,
     versionDefinitionBytes: 10 * 1024 * 1024,
+    revisionCheckScopes: 100,
     auditLogPageSize: 50,
   })
 })

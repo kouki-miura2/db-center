@@ -61,6 +61,8 @@ export const LIMITS = {
   columnsPerTable: 200,
   /** Total size of one version's design (UTF-8 bytes of every non-deleted object's definition JSON, 10 MB). Checked in both the UI and the API when an object is added or saved. Provisional. */
   versionDefinitionBytes: 10 * 1024 * 1024,
+  /** Scopes (products, databases, versions) one revision check may ask about. Checked in the API. Provisional. */
+  revisionCheckScopes: 100,
   /** Audit log entries per page (newest first). Used by the API. Provisional. */
   auditLogPageSize: 50,
 } as const

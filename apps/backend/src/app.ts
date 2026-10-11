@@ -21,6 +21,7 @@ import type { DatabaseService } from './service/database.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
 import type { ProductService } from './service/product.service.ts'
+import type { RevisionService } from './service/revision.service.ts'
 import { text, validate } from './validation.ts'
 
 export interface AuthConfig {
@@ -71,6 +72,7 @@ export interface AppDependencies {
   invitationService: InvitationService
   memberService: MemberService
   databaseService: DatabaseService
+  revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
@@ -618,6 +620,32 @@ export const createApp = (deps: AppDependencies) => {
               productId: c.req.valid('param').productId,
               ...c.req.valid('query'),
             }),
+          )
+        },
+      )
+      // Revisions of several cached scopes at once; the ones the user can't see are left out.
+      .post(
+        '/revisions/check',
+        validate(
+          'json',
+          z
+            .strictObject({
+              productList: z.boolean(),
+              productIds: z.array(z.uuid()),
+              databaseIds: z.array(z.uuid()),
+              versionIds: z.array(z.uuid()),
+            })
+            .refine(
+              ({ productIds, databaseIds, versionIds }) =>
+                productIds.length + databaseIds.length + versionIds.length <=
+                LIMITS.revisionCheckScopes,
+              `確認できるスコープは${LIMITS.revisionCheckScopes}件までです`,
+            ),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.revisionService.check({ userId: user.id, ...c.req.valid('json') }),
           )
         },
       )

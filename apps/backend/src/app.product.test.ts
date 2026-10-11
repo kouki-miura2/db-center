@@ -9,6 +9,7 @@ import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
+import { createRevisionMemoryDao } from './dao/revision.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
 import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
@@ -17,6 +18,7 @@ import { createDatabaseRepository } from './repository/database.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createMemberRepository } from './repository/member.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
+import { createRevisionRepository } from './repository/revision.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
 import { createAuditLogService } from './service/audit-log.service.ts'
 import type { AuthService } from './service/auth.service.ts'
@@ -25,6 +27,7 @@ import { createDatabaseService } from './service/database.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
 import { createProductService } from './service/product.service.ts'
+import { createRevisionService } from './service/revision.service.ts'
 
 // The product routes over the real service and in-memory DAO. Requests act as the user named in
 // the `x-test-user` header, so one test can play several users.
@@ -79,6 +82,9 @@ beforeEach(() => {
     databaseService: createDatabaseService({
       products,
       databases: createDatabaseRepository(createDatabaseMemoryDao(db)),
+    }),
+    revisionService: createRevisionService({
+      revisions: createRevisionRepository(createRevisionMemoryDao(db)),
     }),
     auditLogService: createAuditLogService({
       products,
@@ -915,5 +921,51 @@ describe('databases', () => {
 
     expect(res.status).toBe(404)
     expect((await app.request(path, as('u1'))).status).toBe(404)
+  })
+})
+
+describe('revision check', () => {
+  const check = (userId: string, body: unknown) =>
+    app.request('/api/revisions/check', as(userId, 'POST', body))
+
+  test('returns the revisions of the user’s own scopes, leaving out the rest', async () => {
+    const { body: mine } = await createProduct('u1', 'mine')
+    const { body: theirs } = await createProduct('u2', 'theirs')
+    const created = await app.request(
+      `/api/products/${mine.product.id}/databases`,
+      as('u1', 'POST', { name: 'main' }),
+    )
+    const { database } = await created.json()
+    const scopes = {
+      productIds: [mine.product.id, theirs.product.id],
+      databaseIds: [database.id, crypto.randomUUID()],
+      versionIds: [database.latestVersion.id],
+    }
+
+    const res = await check('u1', { productList: true, ...scopes })
+
+    expect(await res.json()).toEqual({
+      productList: 2,
+      products: { [mine.product.id]: 2 },
+      databases: { [database.id]: 1 },
+      versions: { [database.latestVersion.id]: 1 },
+    })
+    const outsider = await check('u3', { productList: false, ...scopes })
+    expect(await outsider.json()).toEqual({
+      productList: null,
+      products: {},
+      databases: {},
+      versions: {},
+    })
+  })
+
+  test(`refuses more than ${LIMITS.revisionCheckScopes} scopes and malformed IDs`, async () => {
+    const ids = (n: number) => Array.from({ length: n }, () => crypto.randomUUID())
+    const request = (productIds: string[], databaseIds: string[]) =>
+      check('u1', { productList: false, productIds, databaseIds, versionIds: [] })
+
+    expect((await request(ids(LIMITS.revisionCheckScopes), ids(1))).status).toBe(400)
+    expect((await request(ids(LIMITS.revisionCheckScopes), [])).status).toBe(200)
+    expect((await request(['x'], [])).status).toBe(400)
   })
 })
