@@ -76,6 +76,8 @@ interface DatabaseWrite {
 }
 
 export interface DatabaseDao {
+  /** A version under an active database of this active product. */
+  findVersion: (productId: string, versionId: string) => Promise<VersionRecord | null>
   /** A database that isn't deleted, of a product that isn't deleted, or null. */
   findById: (productId: string, databaseId: string) => Promise<DatabaseRecord | null>
   /**
@@ -94,6 +96,7 @@ export interface DatabaseDao {
       versionId: string
       schema: InitialSchema | null
       maxDatabases: number
+      sourceVersionId?: string
     },
   ) => Promise<{ productRevision: number }>
   /**

@@ -2,8 +2,10 @@ import { databaseDaoContract } from 'backend/src/dao/database.contract.ts'
 import { afterEach } from 'vite-plus/test'
 
 import { createDatabaseD1Dao } from './database.d1.ts'
+import { createObjectD1Dao } from './object.d1.ts'
 import { createProductD1Dao } from './product.d1.ts'
 import { createTestD1 } from './test-d1.ts'
+import { createVersionD1Dao } from './version.d1.ts'
 
 let dispose: (() => Promise<void>) | undefined
 afterEach(() => dispose?.())
@@ -23,6 +25,8 @@ databaseDaoContract(async () => {
   return {
     dao: createDatabaseD1Dao(db),
     products: createProductD1Dao(db),
+    objects: createObjectD1Dao(db),
+    versions: createVersionD1Dao(db),
     addMember: async (productId, userId, role) => {
       await db
         .prepare(

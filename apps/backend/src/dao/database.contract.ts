@@ -2,12 +2,16 @@ import { expect, test } from 'vite-plus/test'
 
 import type { AuditLogRecord } from './audit-log.interface.ts'
 import type { DatabaseDao, DatabaseRecord, InitialSchema } from './database.interface.ts'
+import type { ObjectDao } from './object.interface.ts'
 import type { ProductDao } from './product.interface.ts'
+import type { VersionDao } from './version.interface.ts'
 
 /** Access to the store underneath a `DatabaseDao`, for arranging and checking the tests. */
 export interface DatabaseDaoFixture {
   dao: DatabaseDao
   products: ProductDao
+  objects: ObjectDao
+  versions: VersionDao
   /** Adds a membership directly, as joining will. */
   addMember: (productId: string, userId: string, role: 'manager' | 'member') => Promise<void>
   markProductDeleted: (productId: string) => Promise<void>
@@ -85,6 +89,146 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
       maxDatabases,
       audit: audit(`a-${id}`),
     })
+
+  test('clones only active final designs of the same product as independent v1 with stable keys', async () => {
+    const f = await arrange()
+    await create(f, 'd1')
+    const context = (await f.objects.findContext('v-d1'))!
+    const tableKey = crypto.randomUUID(),
+      columnKey = crypto.randomUUID(),
+      constraintKey = crypto.randomUUID(),
+      indexKey = crypto.randomUUID()
+    const table = await f.objects.save({
+      context,
+      userId: 'u1',
+      allowedRoles: ['owner'],
+      now: 1500,
+      audit: audit(crypto.randomUUID()),
+      record: {
+        id: 'o-table',
+        versionId: 'v-d1',
+        objectKey: tableKey,
+        kind: 'table',
+        schemaKey: 'k-d1',
+        name: 'orders',
+        logicalName: '注文',
+        definition: JSON.stringify({
+          columns: [{ key: columnKey }],
+          constraints: [{ key: constraintKey }],
+          indexes: [{ key: indexKey }],
+        }),
+        updatedBy: 'u1',
+        updatedAt: 1500,
+        revision: 1,
+        deletedAt: null,
+      },
+      expectedUpdatedAt: null,
+      delete: false,
+      maxObjects: 100,
+      maxBytes: 10000,
+    })
+    const clone = (id: string, productId = 'p1', maxDatabases = 20) =>
+      f.dao.create({
+        ...base,
+        database: { ...database(id), productId },
+        versionId: `v-${id}`,
+        schema: null,
+        sourceVersionId: 'v-d1',
+        maxDatabases,
+        audit: { ...audit(`a-${id}`), productId },
+      })
+    const count = await f.countAuditLogs()
+    await expect(clone('not-final')).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await f.dao.findById('p1', 'not-final')).toBeNull()
+    expect(await f.countAuditLogs()).toBe(count)
+    const latest = (await f.objects.findContext('v-d1'))!
+    const write = {
+      context: latest,
+      ...base,
+      expectedUpdatedAt: latest.version.updatedAt,
+      expectedRevision: latest.version.revision,
+      now: 2000,
+      audit: audit('provisional'),
+    }
+    const provisional = await f.versions.transition({
+      ...write,
+      to: 'provisional',
+      memo: null,
+      acknowledgeApplied: false,
+    })
+    await expect(clone('not-provisional')).rejects.toMatchObject({ code: 'stale_update' })
+    const final = await f.versions.finalize({
+      ...write,
+      expectedUpdatedAt: provisional.version.updatedAt,
+      expectedRevision: provisional.version.revision,
+      memo: null,
+      next: null,
+      audit: audit('final'),
+    })
+    await clone('copied')
+    const scope = (await f.dao.findScope('p1', 'copied'))!
+    expect(scope.commonColumns).toBeNull()
+    expect(scope.versions[0]).toMatchObject({
+      number: 1,
+      status: 'editing',
+      sourceVersionId: null,
+      revision: 1,
+      compactedRevision: 1,
+      schemaCount: 1,
+      tableCount: 1,
+      definitionBytes: final.version.definitionBytes,
+    })
+    const copied = (await f.objects.findScope('v-copied'))!.objects.find(
+      (v) => v.objectKey === tableKey,
+    )!
+    expect(copied.id).not.toBe(table.object.id)
+    expect(copied.schemaKey).toBe('k-d1')
+    expect(copied.definition).toBe(table.object.definition)
+    await f.objects.save({
+      context: (await f.objects.findContext('v-copied'))!,
+      ...base,
+      now: 2500,
+      audit: audit('rename-copy'),
+      record: { ...copied, name: 'renamed' },
+      expectedUpdatedAt: copied.updatedAt,
+      delete: false,
+      maxObjects: 100,
+      maxBytes: 10000,
+    })
+    expect(
+      (await f.objects.findScope('v-d1'))!.objects.find((v) => v.objectKey === tableKey)!.name,
+    ).toBe('orders')
+    await f.products.create({
+      product: {
+        id: 'p2',
+        name: 'other',
+        target: 'postgresql18',
+        createdAt: 1000,
+        updatedAt: 1000,
+        revision: 1,
+        deletedAt: null,
+      },
+      ownerId: 'u1',
+      maxProducts: 20,
+      audit: { ...audit('p2'), productId: 'p2', targetType: 'product' },
+    })
+    await expect(clone('external', 'p2')).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await f.dao.findById('p2', 'external')).toBeNull()
+    await expect(clone('over-limit', 'p1', 2)).rejects.toMatchObject({ code: 'limit_exceeded' })
+    expect(await f.dao.findById('p1', 'over-limit')).toBeNull()
+    expect(await f.objectNames('v-over-limit')).toEqual([])
+    const sourceDb = (await f.dao.findById('p1', 'd1'))!
+    await f.dao.delete({
+      ...base,
+      productId: 'p1',
+      databaseId: 'd1',
+      expectedUpdatedAt: sourceDb.updatedAt,
+      now: 3000,
+      audit: audit('delete-source'),
+    })
+    expect(await f.dao.findVersion('p1', 'v-d1')).toBeNull()
+    await expect(clone('deleted')).rejects.toMatchObject({ code: 'stale_update' })
+  })
 
   test('creates a database with v1 (editing) holding its schema, listed in the product scope', async () => {
     const f = await arrange()

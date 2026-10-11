@@ -1070,6 +1070,85 @@ test('object routes isolate products, lock each object and return deletion delta
   ).toBe('unchanged')
 })
 
+test('database cloning accepts only an accessible final source and preserves design keys', async () => {
+  const { body } = await createProduct('u1', 'clone-product')
+  const productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const path = `/api/products/${productId}/databases`
+  const source = (await (await app.request(path, as('u1', 'POST', { name: 'source' }))).json())
+    .database
+  const sourceVersionId = source.latestVersion.id
+  const versionPath = `/api/versions/${sourceVersionId}`
+  expect(
+    (await app.request(path, as('u1', 'POST', { name: 'editing_clone', sourceVersionId }))).status,
+  ).toBe(409)
+  const initial = (await (await app.request(versionPath, as('u1'))).json()).data
+  const p = await (
+    await app.request(
+      `${versionPath}/provisional`,
+      as('u1', 'POST', {
+        expectedUpdatedAt: initial.version.updatedAt,
+        expectedRevision: initial.version.revision,
+      }),
+    )
+  ).json()
+  expect(
+    (await app.request(path, as('u1', 'POST', { name: 'provisional_clone', sourceVersionId })))
+      .status,
+  ).toBe(409)
+  await app.request(
+    `${versionPath}/finalize`,
+    as('u1', 'POST', {
+      expectedUpdatedAt: p.version.updatedAt,
+      expectedRevision: p.version.revision,
+    }),
+  )
+  expect(
+    (await app.request(path, as('u2', 'POST', { name: 'member_clone', sourceVersionId }))).status,
+  ).toBe(403)
+  const clonedResponse = await app.request(
+    path,
+    as('u1', 'POST', { name: 'copy', sourceVersionId }),
+  )
+  expect(clonedResponse.status).toBe(200)
+  const cloned = await clonedResponse.json()
+  expect(cloned.database).toMatchObject({
+    schemaCount: 1,
+    tableCount: 0,
+    latestVersion: { number: 1, status: 'editing' },
+    latestFinalVersion: null,
+  })
+  const copied = (
+    await (await app.request(`/api/versions/${cloned.database.latestVersion.id}`, as('u1'))).json()
+  ).data
+  expect(copied.version.sourceVersionId).toBeNull()
+  expect(copied.objects[0].objectKey).toBe(initial.objects[0].objectKey)
+  expect(copied.objects[0].id).not.toBe(initial.objects[0].id)
+  const { body: other } = await createProduct('u1', 'other-product')
+  expect(
+    (
+      await app.request(
+        `/api/products/${other.product.id}/databases`,
+        as('u1', 'POST', { name: 'external', sourceVersionId }),
+      )
+    ).status,
+  ).toBe(404)
+  const dbScope = (await (await app.request(`${path}/${source.id}`, as('u1'))).json()).data
+  await app.request(
+    `${path}/${source.id}`,
+    as('u1', 'DELETE', {
+      confirmationName: 'source',
+      expectedUpdatedAt: dbScope.database.updatedAt,
+    }),
+  )
+  expect(
+    (await app.request(path, as('u1', 'POST', { name: 'deleted_source', sourceVersionId }))).status,
+  ).toBe(404)
+  expect(
+    (await app.request(`/api/versions/${cloned.database.latestVersion.id}`, as('u1'))).status,
+  ).toBe(200)
+})
+
 test('finalize and new version routes enforce state, permissions and compacted cache reads', async () => {
   const { body } = await createProduct('u1', 'version-final')
   const productId = body.product.id

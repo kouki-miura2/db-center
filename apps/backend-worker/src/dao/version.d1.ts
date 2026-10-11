@@ -5,23 +5,9 @@ import type {
 } from 'backend/src/dao/version.interface.ts'
 
 import { guard, insertAuditLog, runBatch, staleGuard } from './batch.ts'
-import { toVersionRecord, type VersionRow } from './database.d1.ts'
+import { copyD1Objects, toVersionRecord, type VersionRow } from './database.d1.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
-export const copyD1Objects = (
-  db: D1Database,
-  sourceId: string,
-  versionId: string,
-  userId: string,
-  now: number,
-) =>
-  db
-    .prepare(`
-  INSERT INTO objects (id,version_id,object_key,kind,schema_key,name,logical_name,definition,updated_by,updated_at,revision)
-  SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',(random() & 3)+1,1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-    ?,object_key,kind,schema_key,name,logical_name,definition,?,?,1 FROM objects WHERE version_id = ? AND deleted_at IS NULL
-`)
-    .bind(versionId, userId, now, sourceId)
 const cloneStatements = (db: D1Database, input: VersionWrite, id: string) => [
   guard(
     db,

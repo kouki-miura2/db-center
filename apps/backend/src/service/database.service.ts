@@ -66,12 +66,13 @@ export interface DatabaseService {
     databaseId: string
     clientRevision?: number
   }) => Promise<ScopeResult<DatabaseScopeView>>
-  /** An empty database: v1 (editing) with the target's initial schema. */
+  /** v1 (editing), optionally cloned from a final version of the same product. */
   createDatabase: (input: {
     userId: string
     productId: string
     name: string
     description: string
+    sourceVersionId?: string
   }) => Promise<{ database: DatabaseListItemView; revisions: { product: number } }>
   updateDatabase: (input: {
     userId: string
@@ -222,8 +223,13 @@ export const createDatabaseService = (deps: {
       }
     },
 
-    createDatabase: async ({ userId, productId, name, description }) => {
+    createDatabase: async ({ userId, productId, name, description, sourceVersionId }) => {
       const { product } = await authorize(productId, userId)
+      const source = sourceVersionId
+        ? await deps.databases.findVersion(productId, sourceVersionId)
+        : null
+      if (sourceVersionId && !source) throw new AppError('not_found')
+      if (source && source.status !== 'final') throw new AppError('invalid_state')
       const now = Date.now()
       const database: Database = {
         id: crypto.randomUUID(),
@@ -235,13 +241,14 @@ export const createDatabaseService = (deps: {
         revision: 1,
       }
       const versionId = crypto.randomUUID()
-      const schema = initialSchema(product.target)
+      const schema = source ? null : initialSchema(product.target)
       const { productRevision } = await deps.databases
         .create({
           ...actor(userId),
           database,
           versionId,
           schema,
+          sourceVersionId,
           maxDatabases: LIMITS.databasesPerProduct,
           audit: audit(productId, userId, 'create', name, now),
         })
@@ -253,8 +260,8 @@ export const createDatabaseService = (deps: {
             id: versionId,
             number: 1,
             status: 'editing',
-            schemaCount: schema ? 1 : 0,
-            tableCount: 0,
+            schemaCount: source?.schemaCount ?? (schema ? 1 : 0),
+            tableCount: source?.tableCount ?? 0,
           },
           latestFinalVersion: null,
         }),

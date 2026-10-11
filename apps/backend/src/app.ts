@@ -527,17 +527,22 @@ export const createApp = (deps: AppDependencies) => {
         validate('param', productId),
         validate(
           'json',
-          z.strictObject({ ...databaseFields, description: databaseFields.description.optional() }),
+          z.strictObject({
+            ...databaseFields,
+            description: databaseFields.description.optional(),
+            sourceVersionId: z.uuid().optional(),
+          }),
         ),
         async (c) => {
           const user = requireUser(c)
-          const { name, description } = c.req.valid('json')
+          const { name, description, sourceVersionId } = c.req.valid('json')
           return c.json(
             await deps.databaseService.createDatabase({
               userId: user.id,
               productId: c.req.valid('param').productId,
               name,
               description: description ?? '',
+              sourceVersionId,
             }),
           )
         },

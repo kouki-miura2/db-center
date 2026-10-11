@@ -1,6 +1,6 @@
 import { AppError } from '../error.ts'
 import type { VersionRecord } from './database.interface.ts'
-import { databases, objects, versions } from './database.memory.ts'
+import { copyMemoryObjects, databases, objects, versions } from './database.memory.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import { memoryVersionContext } from './object.memory.ts'
 import { assertActorRole, bumpProductRevision } from './product.memory.ts'
@@ -11,28 +11,6 @@ export const memoryApplications = (db: MemoryDb, id: string) =>
   [...memoryTable<DeploymentRow>(db, 'deployments').values()]
     .filter((v) => v.toVersionId === id)
     .map(({ id, connectionName, status }) => ({ id, connectionName, status }))
-export const copyMemoryObjects = (
-  db: MemoryDb,
-  sourceId: string,
-  versionId: string,
-  userId: string,
-  now: number,
-) => {
-  const rows = [...objects(db).values()].filter(
-    (v) => v.versionId === sourceId && v.deletedAt === null,
-  )
-  rows.forEach((v) => {
-    const id = crypto.randomUUID()
-    objects(db).set(id, {
-      ...structuredClone(v),
-      id,
-      versionId,
-      updatedBy: userId,
-      updatedAt: now,
-      revision: 1,
-    })
-  })
-}
 const current = (db: MemoryDb, input: VersionWrite) => {
   const c = memoryVersionContext(db, input.context.version.id)
   if (!c || c.productId !== input.context.productId) throw new AppError('stale_update')

@@ -28,6 +28,7 @@ export interface DatabaseScope {
 export type DatabaseSummary = Omit<DatabaseSummaryRecord, 'database'> & { database: Database }
 
 export interface DatabaseRepository {
+  findVersion: DatabaseDao['findVersion']
   findById: (productId: string, databaseId: string) => Promise<Database | null>
   findScope: (productId: string, databaseId: string) => Promise<DatabaseScope | null>
   create: (
@@ -61,6 +62,7 @@ export const toDatabaseSummary = (record: DatabaseSummaryRecord): DatabaseSummar
 })
 
 export const createDatabaseRepository = (dao: DatabaseDao): DatabaseRepository => ({
+  findVersion: dao.findVersion,
   findById: async (productId, databaseId) => {
     const record = await dao.findById(productId, databaseId)
     return record ? toDatabase(record) : null

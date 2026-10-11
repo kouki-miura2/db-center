@@ -29,6 +29,7 @@ const database: Database = {
 }
 
 const fakeDatabases = (overrides: Partial<DatabaseRepository> = {}): DatabaseRepository => ({
+  findVersion: async () => null,
   findById: async () => database,
   findScope: async () => null,
   saveCommonColumns: async () => ({ revision: 4 }),

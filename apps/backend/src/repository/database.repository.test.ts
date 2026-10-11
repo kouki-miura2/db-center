@@ -36,6 +36,7 @@ const audit: AuditLogRecord = {
 const created: Parameters<DatabaseDao['create']>[0][] = []
 const saved: string[] = []
 const fakeDao: DatabaseDao = {
+  findVersion: async () => null,
   findById: async () => record,
   findScope: async (_, databaseId) => ({
     database: record,

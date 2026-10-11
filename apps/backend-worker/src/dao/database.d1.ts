@@ -6,7 +6,7 @@ import type {
   VersionStatus,
 } from 'backend/src/dao/database.interface.ts'
 
-import { insertAuditLog, limitGuard, runBatch, staleGuard } from './batch.ts'
+import { guard, insertAuditLog, limitGuard, runBatch, staleGuard } from './batch.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
 interface DatabaseRow {
@@ -120,6 +120,15 @@ const revisionAt = (results: D1Result[], index: number) =>
 
 /** D1 `DatabaseDao` (databases, and the v1 and schema a new database starts with). */
 export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
+  findVersion: async (productId, versionId) => {
+    const row = await db
+      .prepare(
+        'SELECT v.* FROM versions v JOIN databases d ON d.id = v.database_id JOIN products p ON p.id = d.product_id WHERE v.id = ? AND d.product_id = ? AND d.deleted_at IS NULL AND p.deleted_at IS NULL',
+      )
+      .bind(versionId, productId)
+      .first<VersionRow>()
+    return row ? toVersionRecord(row) : null
+  },
   findById: async (productId, databaseId) => {
     const row = await db.prepare(ACTIVE_DATABASE).bind(databaseId, productId).first<DatabaseRow>()
     return row ? toDatabaseRecord(row) : null
@@ -142,9 +151,29 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
     }
   },
 
-  create: async ({ database, versionId, schema, maxDatabases, userId, allowedRoles, audit }) => {
+  create: async ({
+    database,
+    versionId,
+    schema,
+    maxDatabases,
+    userId,
+    allowedRoles,
+    audit,
+    sourceVersionId,
+  }) => {
     const statements = [
       actorHasRole(db, database.productId, userId, allowedRoles),
+      ...(sourceVersionId
+        ? [
+            guard(
+              db,
+              'stale_update',
+              "NOT EXISTS (SELECT 1 FROM versions v JOIN databases d ON d.id = v.database_id WHERE v.id = ? AND v.status = 'final' AND d.product_id = ? AND d.deleted_at IS NULL)",
+              sourceVersionId,
+              database.productId,
+            ),
+          ]
+        : []),
       // A name already in use fails the partial UNIQUE index (`duplicate`).
       db
         .prepare(
@@ -166,20 +195,36 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
         database.productId,
         maxDatabases,
       ),
-      db
-        .prepare(
-          "INSERT INTO versions (id, database_id, number, status, created_at, updated_at, schema_count, definition_bytes) VALUES (?, ?, 1, 'editing', ?, ?, ?, coalesce(length(CAST(? AS BLOB)), 0))",
-        )
-        .bind(
-          versionId,
-          database.id,
-          database.createdAt,
-          database.createdAt,
-          schema ? 1 : 0,
-          // UTF-8 bytes, as a BLOB's length counts them.
-          schema?.definition ?? null,
-        ),
-      ...(schema
+      ...(sourceVersionId
+        ? [
+            db
+              .prepare(`INSERT INTO versions (id,database_id,number,status,created_at,updated_at,schema_count,table_count,definition_bytes)
+        SELECT ?,?,1,'editing',?,?,schema_count,table_count,definition_bytes FROM versions WHERE id = ?`)
+              .bind(
+                versionId,
+                database.id,
+                database.createdAt,
+                database.createdAt,
+                sourceVersionId,
+              ),
+            copyD1Objects(db, sourceVersionId, versionId, userId, database.createdAt),
+          ]
+        : [
+            db
+              .prepare(
+                "INSERT INTO versions (id, database_id, number, status, created_at, updated_at, schema_count, definition_bytes) VALUES (?, ?, 1, 'editing', ?, ?, ?, coalesce(length(CAST(? AS BLOB)), 0))",
+              )
+              .bind(
+                versionId,
+                database.id,
+                database.createdAt,
+                database.createdAt,
+                schema ? 1 : 0,
+                // UTF-8 bytes, as a BLOB's length counts them.
+                schema?.definition ?? null,
+              ),
+          ]),
+      ...(schema && !sourceVersionId
         ? [
             db
               .prepare(
@@ -264,3 +309,18 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
     return { productRevision: revisionAt(results, 3) }
   },
 })
+
+export const copyD1Objects = (
+  db: D1Database,
+  sourceId: string,
+  versionId: string,
+  userId: string,
+  now: number,
+) =>
+  db
+    .prepare(`
+  INSERT INTO objects (id,version_id,object_key,kind,schema_key,name,logical_name,definition,updated_by,updated_at,revision)
+  SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',(random() & 3)+1,1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+    ?,object_key,kind,schema_key,name,logical_name,definition,?,?,1 FROM objects WHERE version_id = ? AND deleted_at IS NULL
+`)
+    .bind(versionId, userId, now, sourceId)

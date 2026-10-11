@@ -71,6 +71,13 @@ export const databaseSummaries = (db: MemoryDb, productId: string): DatabaseSumm
 
 /** In-memory `DatabaseDao` over the shared `MemoryDb`. */
 export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
+  findVersion: async (productId, versionId) => {
+    const version = versions(db).get(versionId)
+    const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
+    return product?.deletedAt === null && version && inProduct(db, productId, version.databaseId)
+      ? structuredClone(version)
+      : null
+  },
   findById: async (productId, databaseId) => {
     const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
     const row = inProduct(db, productId, databaseId)
@@ -90,9 +97,26 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
     }
   },
 
-  create: async ({ database, versionId, schema, maxDatabases, userId, allowedRoles, audit }) =>
+  create: async ({
+    database,
+    versionId,
+    schema,
+    maxDatabases,
+    userId,
+    allowedRoles,
+    audit,
+    sourceVersionId,
+  }) =>
     atomic(db, () => {
       assertActorRole(db, database.productId, userId, allowedRoles)
+      const source = sourceVersionId ? versions(db).get(sourceVersionId) : null
+      if (
+        sourceVersionId &&
+        (!source ||
+          source.status !== 'final' ||
+          !inProduct(db, database.productId, source.databaseId))
+      )
+        throw new AppError('stale_update')
       assertNameFree(db, database.productId, database.name, database.id)
       databases(db).set(database.id, { ...database, commonColumns: null })
       if (activeOf(db, database.productId).length > maxDatabases) {
@@ -111,11 +135,13 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
         updatedAt: database.createdAt,
         revision: 1,
         compactedRevision: 1,
-        schemaCount: schema ? 1 : 0,
-        tableCount: 0,
-        definitionBytes: schema ? utf8ByteLength(schema.definition) : 0,
+        schemaCount: source?.schemaCount ?? (schema ? 1 : 0),
+        tableCount: source?.tableCount ?? 0,
+        definitionBytes:
+          source?.definitionBytes ?? (schema ? utf8ByteLength(schema.definition) : 0),
       })
-      if (schema) {
+      if (source) copyMemoryObjects(db, source.id, versionId, userId, database.createdAt)
+      if (schema && !source) {
         objects(db).set(schema.id, {
           id: schema.id,
           versionId,
@@ -175,3 +201,26 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
       return { productRevision }
     }),
 })
+
+export const copyMemoryObjects = (
+  db: MemoryDb,
+  sourceId: string,
+  versionId: string,
+  userId: string,
+  now: number,
+) => {
+  const rows = [...objects(db).values()].filter(
+    (v) => v.versionId === sourceId && v.deletedAt === null,
+  )
+  rows.forEach((v) => {
+    const id = crypto.randomUUID()
+    objects(db).set(id, {
+      ...structuredClone(v),
+      id,
+      versionId,
+      updatedBy: userId,
+      updatedAt: now,
+      revision: 1,
+    })
+  })
+}

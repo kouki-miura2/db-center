@@ -1,9 +1,11 @@
 import { databaseDaoContract } from './database.contract.ts'
 import { createDatabaseMemoryDao, objects, versions } from './database.memory.ts'
 import { createMemoryDb, memoryTable } from './memory-db.ts'
+import { createObjectMemoryDao } from './object.memory.ts'
 import type { ProductRecord } from './product.interface.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './product.memory.ts'
 import type { UserRecord } from './user.interface.ts'
+import { createVersionMemoryDao } from './version.memory.ts'
 
 databaseDaoContract(async () => {
   const db = createMemoryDb()
@@ -24,6 +26,8 @@ databaseDaoContract(async () => {
   return {
     dao: createDatabaseMemoryDao(db),
     products: createProductMemoryDao(db),
+    objects: createObjectMemoryDao(db),
+    versions: createVersionMemoryDao(db),
     addMember: async (productId, userId, role) => {
       memoryTable<MemberRow>(db, 'product_members').set(memberKey(productId, userId), {
         productId,
