@@ -1,5 +1,6 @@
 import type { VersionContext } from '../dao/object.interface.ts'
 import type { DesignObject } from '../repository/object.repository.ts'
+import { postgresCatalogQuery } from '../repository/postgres-catalog.ts'
 import type { SqlValidator } from '../repository/sql-validator.interface.ts'
 import {
   invalidDdl,
@@ -21,6 +22,7 @@ import type {
   TableDefinition,
   ViewDefinition,
 } from './definition.ts'
+import { designHash } from './drift.ts'
 
 export const postgresColumn = (column: DesignColumn) => {
   const clauses = [q(column.name), column.dataType]
@@ -121,10 +123,10 @@ export const postgresComments = (object: DesignObject, objects: DesignObject[]) 
       )
   return statements
 }
-export const postgresVersionTable = (context: VersionContext) => [
+export const postgresVersionTable = async (context: VersionContext, objects: DesignObject[]) => [
   'CREATE SCHEMA IF NOT EXISTS "_dbcenter";',
-  'CREATE TABLE IF NOT EXISTS "_dbcenter"."version" (singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton), database_id text NOT NULL, version_id text NOT NULL, version_number integer NOT NULL, applied_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP);',
-  `INSERT INTO "_dbcenter"."version" (singleton,database_id,version_id,version_number) VALUES (true,${literal(context.version.databaseId)},${literal(context.version.id)},${context.version.number}) ON CONFLICT (singleton) DO UPDATE SET database_id=EXCLUDED.database_id,version_id=EXCLUDED.version_id,version_number=EXCLUDED.version_number,applied_at=CURRENT_TIMESTAMP;`,
+  'CREATE TABLE IF NOT EXISTS "_dbcenter"."version" (singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton), database_id text NOT NULL, version_id text NOT NULL, version_number integer NOT NULL, revision integer, design_hash text, deployment_id text, catalog_snapshot jsonb, applied_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP);',
+  `INSERT INTO "_dbcenter"."version" (singleton,database_id,version_id,version_number,revision,design_hash,catalog_snapshot) VALUES (true,${literal(context.version.databaseId)},${literal(context.version.id)},${context.version.number},${context.version.revision},${literal(await designHash(objects))},(${postgresCatalogQuery})) ON CONFLICT (singleton) DO UPDATE SET database_id=EXCLUDED.database_id,version_id=EXCLUDED.version_id,version_number=EXCLUDED.version_number,revision=EXCLUDED.revision,design_hash=EXCLUDED.design_hash,deployment_id=NULL,catalog_snapshot=EXCLUDED.catalog_snapshot,applied_at=CURRENT_TIMESTAMP;`,
 ]
 export const generatePostgresDdl = async (
   context: VersionContext,
@@ -228,7 +230,7 @@ export const generatePostgresDdl = async (
     for (const object of objects)
       for (const statement of postgresComments(object, objects)) add(object, statement)
   if (options.versionTable)
-    for (const statement of postgresVersionTable(context))
+    for (const statement of await postgresVersionTable(context, objects))
       add(null, statement, !steps.some((v) => !v.transactional))
   const result = scriptResult(context, steps, options.transaction)
   await sql.validateDdl(

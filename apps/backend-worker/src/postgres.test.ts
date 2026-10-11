@@ -125,7 +125,7 @@ test(
         applied: {
           databaseId: context.version.databaseId,
           versionId: context.version.id,
-          revision: null,
+          revision: context.version.revision,
         },
       })
     } finally {

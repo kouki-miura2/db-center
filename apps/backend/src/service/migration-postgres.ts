@@ -231,7 +231,7 @@ export const generatePostgresMigration = async (
     ))
       add(schema, `DROP SCHEMA ${q(schema.name)};`)
   if (selection.complete && changed) {
-    const statement = postgresVersionTable(context)[2]!
+    const statement = (await postgresVersionTable(context, after))[2]!
     add(
       null,
       `DO $dbcenter$ BEGIN IF to_regclass('"_dbcenter"."version"') IS NOT NULL THEN EXECUTE ${literal(statement)}; END IF; END $dbcenter$;`,
