@@ -1,0 +1,77 @@
+import { expect, test } from 'vite-plus/test'
+
+import type { SessionRecord, UserDao, UserRecord } from './user.interface.ts'
+
+/**
+ * Behavior every `UserDao` must share, run against the in-memory DAO here and the D1 DAO in the
+ * runtime package. `setup` returns a fresh, empty DAO plus a way to count stored sessions.
+ */
+export const userDaoContract = (
+  setup: () => Promise<{ dao: UserDao; countSessions: () => Promise<number> }>,
+) => {
+  const user = (overrides: Partial<UserRecord> = {}): UserRecord => ({
+    id: 'u1',
+    googleSub: 'sub-1',
+    email: 'a@example.com',
+    name: 'はなこ',
+    termsVersion: '2026-10-11',
+    agreedAt: 1000,
+    lastLoginAt: 1000,
+    productsRevision: 1,
+    createdAt: 1000,
+    deletedAt: null,
+    ...overrides,
+  })
+  const session = (id: string, userId = 'u1'): SessionRecord => ({
+    id,
+    userId,
+    expiresAt: 9000,
+    createdAt: 1000,
+  })
+
+  test('registers a user with a session and finds them by Google account', async () => {
+    const { dao, countSessions } = await setup()
+
+    await dao.register(user(), session('s1'))
+
+    expect(await dao.findByGoogleSub('sub-1')).toEqual(user())
+    expect(await dao.findByGoogleSub('sub-2')).toBeNull()
+    expect(await countSessions()).toBe(1)
+  })
+
+  test('refuses a second user for the same Google account, creating no session', async () => {
+    const { dao, countSessions } = await setup()
+    await dao.register(user(), session('s1'))
+
+    await expect(dao.register(user({ id: 'u2' }), session('s2', 'u2'))).rejects.toMatchObject({
+      code: 'duplicate',
+    })
+    expect(await countSessions()).toBe(1)
+  })
+
+  test('records a sign-in and its session together', async () => {
+    const { dao, countSessions } = await setup()
+    await dao.register(user(), session('s1'))
+
+    const updated = await dao.recordLogin(
+      { userId: 'u1', email: 'new@example.com', lastLoginAt: 2000 },
+      session('s2'),
+    )
+
+    expect(updated).toMatchObject({ email: 'new@example.com', lastLoginAt: 2000 })
+    expect(await dao.findByGoogleSub('sub-1')).toMatchObject({ email: 'new@example.com' })
+    expect(await countSessions()).toBe(2)
+  })
+
+  test('creates no session when the user is gone', async () => {
+    const { dao, countSessions } = await setup()
+
+    await expect(
+      dao.recordLogin(
+        { userId: 'missing', email: 'a@example.com', lastLoginAt: 2000 },
+        session('s1'),
+      ),
+    ).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await countSessions()).toBe(0)
+  })
+}

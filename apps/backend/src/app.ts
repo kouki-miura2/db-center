@@ -1,10 +1,14 @@
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
+import { setCookie } from 'hono/cookie'
 import { csrf } from 'hono/csrf'
-import { createLogger } from 'utils'
+import { createLogger, LIMITS } from 'utils'
+import { z } from 'zod'
 
 import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
+import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import type { SampleService } from './service/sample.service.ts'
+import { text, validate } from './validation.ts'
 
 export interface AuthConfig {
   guard: AuthGuard
@@ -13,10 +17,29 @@ export interface AuthConfig {
   excludePaths: string[]
 }
 
+/**
+ * The session cookie. In production: `__Host-session`, Secure (no Domain, Path=/, so a subdomain
+ * can't overwrite it). Local development runs over http, where `__Host-` and Secure can't be used.
+ */
+export interface SessionCookieConfig {
+  name: string
+  secure: boolean
+}
+
+export const SESSION_COOKIE = {
+  production: { name: '__Host-session', secure: true },
+  development: { name: 'session', secure: false },
+} as const satisfies Record<string, SessionCookieConfig>
+
 export interface AppDependencies {
   sampleService: SampleService
+  authService: AuthService
   auth: AuthConfig
+  sessionCookie: SessionCookieConfig
 }
+
+// Long enough for any Google ID token (a JWT of about 1 KB).
+const idToken = z.string().min(1).max(8192)
 
 type Variables = { user: AuthenticatedUser | null; requestId: string }
 
@@ -30,6 +53,16 @@ const generateRequestId = (): string =>
 /** Runtime-agnostic app: no Cloudflare Workers or Node-specific APIs here. Entrypoints live in the runtime package (`apps/backend-*`). */
 export const createApp = (deps: AppDependencies) => {
   const logger = createLogger({ format: 'json' })
+
+  // HttpOnly so scripts can't read it, SameSite=Lax so cross-site requests don't carry it.
+  const setSessionCookie = (c: Context, session: IssuedSession) =>
+    setCookie(c, deps.sessionCookie.name, session.token, {
+      httpOnly: true,
+      secure: deps.sessionCookie.secure,
+      sameSite: 'Lax',
+      path: '/',
+      expires: new Date(session.expiresAt),
+    })
 
   return (
     new Hono<{ Variables: Variables }>()
@@ -88,6 +121,39 @@ export const createApp = (deps: AppDependencies) => {
         }
         await next()
       })
+      // Sign in with a Google ID token. A registered user gets a session cookie; an unregistered
+      // one only learns that consent is needed, and nothing is stored until `/auth/register`.
+      .post('/auth/google', validate('json', z.strictObject({ idToken })), async (c) => {
+        const result = await deps.authService.signInWithGoogle(c.req.valid('json').idToken)
+        if (result.status === 'registration_required') return c.json(result)
+        const { session, ...body } = result
+        setSessionCookie(c, session)
+        return c.json(body)
+      })
+      // First consent: verifies the token again and creates the user only after explicit consent
+      // to the current terms version.
+      .post(
+        '/auth/register',
+        validate(
+          'json',
+          z.strictObject({
+            idToken,
+            name: text(LIMITS.userNameMaxLength).min(1),
+            termsVersion: z.string().max(100),
+            agreed: z.literal(true),
+          }),
+        ),
+        async (c) => {
+          const { idToken, name, termsVersion } = c.req.valid('json')
+          const { session, ...body } = await deps.authService.register({
+            idToken,
+            name,
+            termsVersion,
+          })
+          setSessionCookie(c, session)
+          return c.json(body)
+        },
+      )
       // Reference implementation of one endpoint through the app -> service -> repository -> dao
       // layering: the runtime entrypoints wire the concrete dependencies, this route only talks
       // to `SampleService`. Build real routes the same way, then delete this route and the

@@ -1,7 +1,8 @@
 import { expect, test, vi } from 'vite-plus/test'
 
-import { createApp } from './app.ts'
+import { createApp, SESSION_COOKIE } from './app.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
+import type { AuthService } from './service/auth.service.ts'
 import type { SampleService } from './service/sample.service.ts'
 
 const sampleService: SampleService = {
@@ -9,9 +10,20 @@ const sampleService: SampleService = {
 }
 const allowAllGuard: AuthGuard = { authenticate: async () => ({ id: 'test-user' }) }
 const denyAllGuard: AuthGuard = { authenticate: async () => null }
+// Dependencies these tests don't exercise.
+const unusedAuthService: AuthService = {
+  signInWithGoogle: async () => {
+    throw new Error('unused')
+  },
+  register: async () => {
+    throw new Error('unused')
+  },
+}
+const base = { authService: unusedAuthService, sessionCookie: SESSION_COOKIE.development }
 
 test('GET /api/sample/:id returns the service response when the auth guard is disabled', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: false, excludePaths: [] },
   })
@@ -23,6 +35,7 @@ test('GET /api/sample/:id returns the service response when the auth guard is di
 
 test('GET /api/sample/:id returns 404 for an unknown id', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: false, excludePaths: [] },
   })
@@ -34,6 +47,7 @@ test('GET /api/sample/:id returns 404 for an unknown id', async () => {
 
 test('rejects unauthenticated requests once the auth guard is enabled', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
   })
@@ -45,6 +59,7 @@ test('rejects unauthenticated requests once the auth guard is enabled', async ()
 
 test('allows authenticated requests once the auth guard is enabled', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: allowAllGuard, enabled: true, excludePaths: [] },
   })
@@ -56,6 +71,7 @@ test('allows authenticated requests once the auth guard is enabled', async () =>
 
 test('keeps excluded paths free access even when the auth guard is enabled', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: true, excludePaths: ['/api/sample/1'] },
   })
@@ -68,6 +84,7 @@ test('keeps excluded paths free access even when the auth guard is enabled', asy
 test('logs a matching started/completed pair, including for a rejected request', async () => {
   const info = vi.spyOn(console, 'info').mockImplementation(() => {})
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
   })
@@ -100,7 +117,11 @@ test('logs a matching started/completed pair, including for a rejected request',
 })
 
 const openApp = () =>
-  createApp({ sampleService, auth: { guard: denyAllGuard, enabled: false, excludePaths: [] } })
+  createApp({
+    ...base,
+    sampleService,
+    auth: { guard: denyAllGuard, enabled: false, excludePaths: [] },
+  })
 
 test('answers an unknown path with the error format', async () => {
   const res = await openApp().request('/api/missing')
@@ -115,6 +136,7 @@ test('answers an unknown path with the error format', async () => {
 
 test('answers an unauthenticated request with the error format', async () => {
   const app = createApp({
+    ...base,
     sampleService,
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
   })
@@ -162,6 +184,7 @@ test('hides an unexpected error behind a 500 and logs it', async () => {
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'info').mockImplementation(() => {})
   const app = createApp({
+    ...base,
     sampleService: {
       getSample: async () => {
         throw new Error('secret detail')
