@@ -9,12 +9,14 @@
     "deploy": "vp run frontend#build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "migrate:local": "wrangler d1 migrations apply DB --local",
-    "check": "vp check"
+    "check": "vp check",
+    "test": "vp test"
   },
   "dependencies": {
     "backend": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "frontend": "workspace:*",
     "typescript": "catalog:",
     "wrangler": "^4.131.1"
