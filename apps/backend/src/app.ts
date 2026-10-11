@@ -425,6 +425,30 @@ export const createApp = (deps: AppDependencies) => {
           )
         },
       )
+      // Joining with a passcode, as the signed-in user's own email.
+      .post(
+        '/invitations/join',
+        validate(
+          'json',
+          z.strictObject({
+            passcode: z
+              .string()
+              .trim()
+              .regex(/^[0-9A-Za-z]{8}$/),
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.invitationService.join({
+              userId: user.id,
+              userName: user.name,
+              email: user.email,
+              passcode: c.req.valid('json').passcode,
+            }),
+          )
+        },
+      )
       // Development login: signs in as any email without Google. Answers 404 unless the runtime
       // package turned it on explicitly and the request is to localhost.
       .post(

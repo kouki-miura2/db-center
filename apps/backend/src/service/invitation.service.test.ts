@@ -40,6 +40,10 @@ const secrets: SecretBox = {
 const fakeInvitations = (overrides: Partial<InvitationRepository> = {}): InvitationRepository => ({
   findValid: async () => null,
   create: async () => ({ productRevision: 2 }),
+  findForJoin: async () => null,
+  countFailures: async () => 0,
+  recordFailure: async () => {},
+  join: async () => ({ productRevision: 3, productsRevision: 4 }),
   ...overrides,
 })
 
@@ -177,4 +181,73 @@ test('refuses to show a manager invitation to a manager, or an expired one to an
     code: 'forbidden',
   })
   await expect(service('owner').showPasscode(input)).rejects.toMatchObject({ code: 'not_found' })
+})
+
+const joinInput = { userId: 'u2', userName: 'はなこ', email: 'A@Example.com', passcode: 'ab12cd34' }
+
+test('joins with a passcode that opens an invitation to the user’s email', async () => {
+  const findForJoin = vi.fn<InvitationRepository['findForJoin']>(async () => stored('member'))
+  const join = vi.fn<InvitationRepository['join']>(async () => ({
+    productRevision: 3,
+    productsRevision: 4,
+  }))
+
+  const result = await service('member', fakeInvitations({ findForJoin, join })).join(joinInput)
+
+  expect(findForJoin.mock.calls[0]?.slice(0, 2)).toEqual([
+    await hashPasscode('AB12CD34'),
+    'a@example.com',
+  ])
+  expect(join.mock.calls[0]?.[0]).toMatchObject({
+    userId: 'u2',
+    maxMembers: LIMITS.membersPerProduct,
+    maxProducts: LIMITS.productsPerUser,
+    audit: { targetType: 'member', action: 'join', summary: 'はなこ', productId: 'p1' },
+  })
+  expect(result).toMatchObject({
+    product: { id: 'p1', role: 'member' },
+    revisions: { products: 4, product: 3 },
+  })
+})
+
+test('a wrong passcode records a failure with a message that doesn’t say which part was wrong', async () => {
+  const recordFailure = vi.fn<InvitationRepository['recordFailure']>(async () => {})
+
+  await expect(
+    service('member', fakeInvitations({ recordFailure })).join(joinInput),
+  ).rejects.toMatchObject({
+    code: 'invalid_input',
+    message: 'パスコードが正しくないか、このアカウント宛ての招待ではありません',
+  })
+  expect(recordFailure).toHaveBeenCalledTimes(1)
+})
+
+test('at the failure limit, refuses entry without even checking the code', async () => {
+  vi.useFakeTimers({ now: 10 * 60 * 60 * 1000 })
+  const countFailures = vi.fn<InvitationRepository['countFailures']>(
+    async () => LIMITS.passcodeFailures,
+  )
+  const findForJoin = vi.fn()
+
+  await expect(
+    service('member', fakeInvitations({ countFailures, findForJoin })).join(joinInput),
+  ).rejects.toMatchObject({ code: 'too_many_attempts' })
+  expect(countFailures.mock.calls[0]).toEqual([
+    'u2',
+    10 * 60 * 60 * 1000 - LIMITS.passcodeFailureWindowHours * 60 * 60 * 1000,
+  ])
+  expect(findForJoin).not.toHaveBeenCalled()
+})
+
+test('explains joining a product the user is already in', async () => {
+  const invitations = fakeInvitations({
+    findForJoin: async () => stored('member'),
+    join: async () => {
+      throw new AppError('duplicate')
+    },
+  })
+
+  await expect(service('member', invitations).join(joinInput)).rejects.toMatchObject({
+    code: 'invalid_state',
+  })
 })

@@ -127,6 +127,91 @@ export const invitationDaoContract = (setup: () => Promise<InvitationDaoFixture>
     expect(await f.dao.findValid('p1', 'i2', 2000)).toBeNull()
   })
 
+  const join = (
+    f: InvitationDaoFixture,
+    row: InvitationRecord,
+    userId: string,
+    { now = 2000, maxMembers = 10, maxProducts = 20 } = {},
+  ) =>
+    f.dao.join({
+      invitation: row,
+      userId,
+      now,
+      maxMembers,
+      maxProducts,
+      audit: audit(`a-join-${row.id}-${userId}`),
+    })
+
+  test('finds an invitation by passcode hash and email only, while valid', async () => {
+    const f = await arrange()
+    await invite(f, [invitation('i1', 'u2@example.com', 3000)])
+
+    expect(await f.dao.findForJoin('hash-i1', 'u2@example.com', 2000)).toMatchObject({ id: 'i1' })
+    expect(await f.dao.findForJoin('hash-i1', 'u3@example.com', 2000)).toBeNull()
+    expect(await f.dao.findForJoin('hash-x', 'u2@example.com', 2000)).toBeNull()
+    expect(await f.dao.findForJoin('hash-i1', 'u2@example.com', 3000)).toBeNull()
+  })
+
+  test('joins: consumes the invitation and adds the member with the revisions', async () => {
+    const f = await arrange()
+    const row = invitation('i1', 'u2@example.com')
+    await invite(f, [row])
+
+    expect(await join(f, row, 'u2')).toEqual({ productRevision: 3, productsRevision: 2 })
+
+    expect(await f.dao.findForJoin('hash-i1', 'u2@example.com', 2000)).toBeNull()
+    expect(await f.products.findMembership('p1', 'u2')).toMatchObject({
+      role: 'member',
+      joinedAt: 2000,
+    })
+    expect(await f.countAuditLogs()).toBe(3)
+  })
+
+  test('refuses a used or expired invitation, changing nothing', async () => {
+    const f = await arrange()
+    const row = invitation('i1', 'u2@example.com', 3000)
+    await invite(f, [row])
+
+    await expect(join(f, row, 'u2', { now: 3000 })).rejects.toMatchObject({ code: 'stale_update' })
+    await join(f, row, 'u2')
+    await expect(join(f, row, 'u3')).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await f.products.findMembership('p1', 'u3')).toBeNull()
+  })
+
+  test('refuses a user who is already a member', async () => {
+    const f = await arrange()
+    const row = invitation('i1', 'x@example.com')
+    await invite(f, [row])
+    await f.addMember('p1', 'u2', 'member')
+
+    await expect(join(f, row, 'u2')).rejects.toMatchObject({ code: 'duplicate' })
+    expect(await f.dao.findForJoin('hash-i1', 'x@example.com', 2000)).not.toBeNull()
+  })
+
+  test('refuses to join beyond the member or the user’s product limit', async () => {
+    const f = await arrange()
+    const row = invitation('i1', 'u2@example.com')
+    await invite(f, [row])
+
+    await expect(join(f, row, 'u2', { maxMembers: 1 })).rejects.toMatchObject({
+      code: 'limit_exceeded',
+    })
+    await expect(join(f, row, 'u2', { maxProducts: 0 })).rejects.toMatchObject({
+      code: 'limit_exceeded',
+    })
+    expect(await f.products.findMembership('p1', 'u2')).toBeNull()
+  })
+
+  test('counts a user’s failed entries since a time', async () => {
+    const f = await arrange()
+    await f.dao.recordFailure({ id: 'f1', userId: 'u2', failedAt: 1000 })
+    await f.dao.recordFailure({ id: 'f2', userId: 'u2', failedAt: 2000 })
+    await f.dao.recordFailure({ id: 'f3', userId: 'u3', failedAt: 2000 })
+
+    expect(await f.dao.countFailures('u2', 1000)).toBe(1)
+    expect(await f.dao.countFailures('u2', 0)).toBe(2)
+  })
+
   test('refuses an actor without the role or on a deleted product', async () => {
     const f = await arrange()
     await f.addMember('p1', 'u2', 'member')

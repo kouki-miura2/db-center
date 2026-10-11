@@ -442,3 +442,52 @@ describe('invitations', () => {
     expect((await res.json()).error.code).toBe('limit_exceeded')
   })
 })
+
+describe('joining', () => {
+  const inviteAndGetCode = async (email: string) => {
+    const { body } = await createProduct('u1', `shop-${email}`)
+    const res = await app.request(
+      `/api/products/${body.product.id}/invitations`,
+      as('u1', 'POST', { invitees: [{ email, role: 'member' }] }),
+    )
+    return { productId: body.product.id as string, passcode: (await res.json()).passcode as string }
+  }
+  const join = (userId: string, passcode: string) =>
+    app.request('/api/invitations/join', as(userId, 'POST', { passcode }))
+
+  test('the invited user joins with the code in any case, and sees the product', async () => {
+    const { productId, passcode } = await inviteAndGetCode('u2@example.com')
+
+    const res = await join('u2', passcode.toLowerCase())
+
+    expect(await res.json()).toMatchObject({ product: { id: productId, role: 'member' } })
+    const list = await (await app.request('/api/products', as('u2'))).json()
+    expect(list.data.map((p: { id: string }) => p.id)).toEqual([productId])
+    const scope = await (await app.request(`/api/products/${productId}`, as('u1'))).json()
+    expect(scope.data.invitations).toEqual([])
+    expect(scope.data.members.map((m: { userId: string }) => m.userId)).toEqual(['u1', 'u2'])
+  })
+
+  test('another account can’t use the code, and gets the same message as a wrong code', async () => {
+    const { passcode } = await inviteAndGetCode('u2@example.com')
+
+    const other = await (await join('u3', passcode)).json()
+    const wrong = await (await join('u2', 'ZZZZ9999')).json()
+
+    expect(other.error.message).toBe(
+      'パスコードが正しくないか、このアカウント宛ての招待ではありません',
+    )
+    expect(wrong.error.message).toBe(other.error.message)
+  })
+
+  test(`refuses entry after ${LIMITS.passcodeFailures} failures, even with the right code`, async () => {
+    const { passcode } = await inviteAndGetCode('u2@example.com')
+    for (let i = 0; i < LIMITS.passcodeFailures; i++) {
+      expect((await join('u2', 'ZZZZ9999')).status).toBe(400)
+    }
+
+    const res = await join('u2', passcode)
+
+    expect(res.status).toBe(429)
+  })
+})

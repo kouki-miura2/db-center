@@ -1,6 +1,6 @@
 import type { InvitationDao, InvitationRecord } from 'backend/src/dao/invitation.interface.ts'
 
-import { guard, insertAuditLog, limitGuard, runBatch } from './batch.ts'
+import { guard, insertAuditLog, limitGuard, runBatch, staleGuard } from './batch.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
 export interface InvitationRow {
@@ -85,5 +85,73 @@ export const createInvitationD1Dao = (db: D1Database): InvitationDao => ({
       | { revision: number }
       | undefined
     return { productRevision: revision?.revision ?? 0 }
+  },
+
+  findForJoin: async (passcodeHash, email, now) => {
+    const row = await db
+      .prepare(
+        'SELECT invitations.* FROM invitations JOIN products ON products.id = invitations.product_id WHERE invitations.passcode_hash = ? AND invitations.email = ? AND invitations.expires_at > ? AND products.deleted_at IS NULL',
+      )
+      .bind(passcodeHash, email, now)
+      .first<InvitationRow>()
+    return row ? toInvitationRecord(row) : null
+  },
+
+  countFailures: async (userId, since) =>
+    (
+      await db
+        .prepare('SELECT count(*) AS n FROM passcode_failures WHERE user_id = ? AND failed_at > ?')
+        .bind(userId, since)
+        .first<{ n: number }>()
+    )?.n ?? 0,
+
+  recordFailure: async ({ id, userId, failedAt }) => {
+    await db
+      .prepare('INSERT INTO passcode_failures (id, user_id, failed_at) VALUES (?, ?, ?)')
+      .bind(id, userId, failedAt)
+      .run()
+  },
+
+  join: async ({ invitation, userId, now, maxMembers, maxProducts, audit }) => {
+    const results = await runBatch(db, [
+      // The invitation is still there and valid, to a product that isn't deleted.
+      db
+        .prepare(
+          'DELETE FROM invitations WHERE id = ? AND expires_at > ? AND product_id IN (SELECT id FROM products WHERE deleted_at IS NULL)',
+        )
+        .bind(invitation.id, now),
+      staleGuard(db),
+      // Already a member: the primary key makes this fail as `duplicate`.
+      db
+        .prepare(
+          'INSERT INTO product_members (product_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)',
+        )
+        .bind(invitation.productId, userId, invitation.role, now),
+      limitGuard(
+        db,
+        '(SELECT count(*) FROM product_members WHERE product_id = ?) > ?',
+        invitation.productId,
+        maxMembers,
+      ),
+      limitGuard(
+        db,
+        '(SELECT count(*) FROM product_members m JOIN products p ON p.id = m.product_id WHERE m.user_id = ? AND p.deleted_at IS NULL) > ?',
+        userId,
+        maxProducts,
+      ),
+      bumpProductRevision(db, invitation.productId),
+      db
+        .prepare(
+          'UPDATE users SET products_revision = products_revision + 1 WHERE id = ? RETURNING products_revision',
+        )
+        .bind(userId),
+      insertAuditLog(db, audit),
+    ])
+    const product = results[5]?.results[0] as { revision: number } | undefined
+    const user = results[6]?.results[0] as { products_revision: number } | undefined
+    return {
+      productRevision: product?.revision ?? 0,
+      productsRevision: user?.products_revision ?? 0,
+    }
   },
 })
