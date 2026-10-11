@@ -67,7 +67,14 @@ export interface DatabaseService {
     productId: string
     databaseId: string
     clientRevision?: number
-  }) => Promise<ScopeResult<DatabaseScopeView>>
+  }) => Promise<
+    | ScopeResult<DatabaseScopeView>
+    /**
+     * The client's revision is older: the database, common columns and versions whole, and only
+     * the deployments changed since (to add or replace by ID; deployments are never removed).
+     */
+    | { mode: 'delta'; revision: number; data: DatabaseScopeView }
+  >
   /** v1 (editing), optionally cloned from a final version of the same product. */
   createDatabase: (input: {
     userId: string
@@ -211,10 +218,15 @@ export const createDatabaseService = (deps: {
       if (current.revision === clientRevision) {
         return { mode: 'unchanged', revision: current.revision }
       }
-      const scope = await deps.databases.findScope(productId, databaseId)
+      // With the revision the client holds, only the deployments changed since (the rest of the
+      // scope is small and comes whole); without one, or one ahead of ours, all of them.
+      const scope = await deps.databases.findScope(productId, databaseId, {
+        deployments: { since: clientRevision },
+      })
       if (!scope) throw new AppError('not_found')
+      const delta = clientRevision !== undefined && clientRevision <= scope.database.revision
       return {
-        mode: 'full',
+        mode: delta ? 'delta' : 'full',
         revision: scope.database.revision,
         data: {
           database: toView(scope.database),

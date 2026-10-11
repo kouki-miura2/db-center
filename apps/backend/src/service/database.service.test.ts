@@ -231,6 +231,27 @@ test('answers the database scope unchanged after reading only the database row',
   expect(findScope).not.toHaveBeenCalled()
 })
 
+test('answers an older revision with the deployments changed since, and a newer one in full', async () => {
+  const findScope = vi.fn<DatabaseRepository['findScope']>(async () => ({
+    database: { ...database, revision: 4 },
+    commonColumns: [],
+    versions: [version(1, 'final')],
+    deployments: [],
+  }))
+  const get = (clientRevision: number) =>
+    service('member', fakeDatabases({ findScope })).getDatabase({
+      userId: 'u1',
+      productId: 'p1',
+      databaseId: 'd1',
+      clientRevision,
+    })
+
+  expect(await get(2)).toMatchObject({ mode: 'delta', revision: 4 })
+  expect(findScope).toHaveBeenLastCalledWith('p1', 'd1', { deployments: { since: 2 } })
+  // Ahead of the server (not a revision it gave out): everything.
+  expect(await get(9)).toMatchObject({ mode: 'full', revision: 4 })
+})
+
 test('returns the whole database scope, versions newest first', async () => {
   const databases = fakeDatabases({
     findScope: async () => ({
@@ -240,11 +261,11 @@ test('returns the whole database scope, versions newest first', async () => {
     }),
   })
 
+  // Nothing cached on the device: no revision.
   const result = await service('member', databases).getDatabase({
     userId: 'u1',
     productId: 'p1',
     databaseId: 'd1',
-    clientRevision: 2,
   })
 
   expect(result).toMatchObject({

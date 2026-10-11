@@ -54,5 +54,13 @@ databaseDaoContract(async () => {
           .bind(versionId)
           .first<{ definition_bytes: number }>()
       )?.definition_bytes ?? 0,
+    addDeployment: async (id, revision, startedAt) => {
+      await db
+        .prepare(
+          "INSERT INTO deployments (id, product_id, database_id, connection_name, kind, to_version_id, status, phase, executed_by, started_at, revision) VALUES (?, 'p1', 'd1', 'conn', 'build', 'v-d1', 'succeeded', 'finished', 'u1', ?, ?)",
+        )
+        .bind(id, startedAt, revision)
+        .run()
+    },
   }
 })

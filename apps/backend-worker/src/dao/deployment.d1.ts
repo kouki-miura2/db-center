@@ -27,6 +27,7 @@ export const toDeploymentRecord = (r: Row): DeploymentRecord => ({
   targetRevision: r.target_revision as number,
   sourceRevision: r.source_revision as number | null,
   executedCount: r.executed_count as number,
+  revision: r.revision as number,
 })
 export const selectDeployments = (db: D1Database, databaseId: string) =>
   db
@@ -51,13 +52,14 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
     ...params: unknown[]
   ) =>
     runBatch(db, [
+      // The database's revision first, so the row can record it.
+      db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
       db
         .prepare(
-          `UPDATE deployments SET status=?,phase='finished',log=?,finished_at=? WHERE id=? AND status='running'${condition}`,
+          `UPDATE deployments SET status=?,phase='finished',log=?,finished_at=?,revision=(SELECT revision FROM databases WHERE id=deployments.database_id) WHERE id=? AND status='running'${condition}`,
         )
         .bind(status, log, now, r.id, ...params),
       staleGuard(db),
-      db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
       bumpProductRevision(db, r.productId),
       insertAuditLog(db, {
         id: crypto.randomUUID(),
@@ -114,9 +116,11 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
               ),
             ]
           : []),
+        // The database's revision first, so the new row can record it.
+        db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
         db
           .prepare(
-            'INSERT INTO deployments(id,product_id,database_id,connection_id,connection_name,kind,from_version_id,to_version_id,status,phase,executed_by,started_at,finished_at,log,idempotency_key,request_hash,plan_hash,connection_snapshot,target_revision,source_revision,executed_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO deployments(id,product_id,database_id,connection_id,connection_name,kind,from_version_id,to_version_id,status,phase,executed_by,started_at,finished_at,log,idempotency_key,request_hash,plan_hash,connection_snapshot,target_revision,source_revision,executed_count,revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT revision FROM databases WHERE id=?))',
           )
           .bind(
             r.id,
@@ -140,8 +144,8 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
             r.targetRevision,
             r.sourceRevision,
             r.executedCount,
+            r.databaseId,
           ),
-        db.prepare('UPDATE databases SET revision=revision+1 WHERE id=?').bind(r.databaseId),
         bumpProductRevision(db, r.productId),
         insertAuditLog(db, audit),
       ])

@@ -23,6 +23,12 @@ export interface DeploymentRecord {
   targetRevision: number
   sourceRevision: number | null
   executedCount: number
+  /**
+   * The database scope's revision when this row last changed (accepted, ended, or its connection
+   * deleted), so the scope can return only the rows changed since a client's revision. Set by
+   * the DAO; ignored on `accept`.
+   */
+  revision: number
 }
 export interface DeploymentDao {
   findById: (id: string) => Promise<DeploymentRecord | null>

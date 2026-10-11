@@ -1701,6 +1701,9 @@ test('deployment SQL and progress require membership and survive connection dele
     connectionSnapshot: 'test-private-value',
   }
   memoryTable<DeploymentRecord>(db, 'deployments').set(record.id, record)
+  // An earlier deployment through a connection deleted long ago: untouched below.
+  const earlier: DeploymentRecord = { ...record, id: crypto.randomUUID(), connectionId: null }
+  memoryTable<DeploymentRecord>(db, 'deployments').set(earlier.id, earlier)
   deploymentSql.set(`deployments/${record.id}.sql`, '-- frozen SQL\nSELECT 1;')
   const deploymentPath = `/api/deployments/${record.id}`
   expect((await app.request(deploymentPath, as('u3'))).status).toBe(404)
@@ -1732,9 +1735,13 @@ test('deployment SQL and progress require membership and survive connection dele
   const after = await (
     await app.request(`${databasePath}?revision=${before.revision}`, as('u2'))
   ).json()
-  expect(after.mode).toBe('full')
+  // Only the deployment that changed comes back.
+  expect(after.mode).toBe('delta')
   expect(after.revision).toBe(before.revision + 1)
+  expect(before.data.deployments).toHaveLength(2)
+  expect(after.data.deployments).toHaveLength(1)
   expect(after.data.deployments[0]).toMatchObject({
+    id: record.id,
     connectionId: null,
     connectionName: 'production（削除済み）',
     connectionDeleted: true,

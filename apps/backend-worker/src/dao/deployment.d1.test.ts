@@ -108,6 +108,8 @@ test('D1 protects running migration sources and preserves history when connectio
   await createConnectionD1Dao(f.db).delete(remove)
   expect(await f.revision()).toBe(before + 1)
   const history = (await f.dao.findById(r.id))!
+  // The deployment changed with the connection, at the new database revision.
+  expect(history.revision).toBe(before + 1)
   expect(deploymentView(history)).toMatchObject({
     connectionId: null,
     connectionName: 'test（削除済み）',

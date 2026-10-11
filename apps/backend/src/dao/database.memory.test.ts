@@ -1,5 +1,7 @@
 import { databaseDaoContract } from './database.contract.ts'
 import { createDatabaseMemoryDao, objects, versions } from './database.memory.ts'
+import { deploymentRecord } from './deployment.contract.ts'
+import type { DeploymentRecord } from './deployment.interface.ts'
 import { createMemoryDb, memoryTable } from './memory-db.ts'
 import { createObjectMemoryDao } from './object.memory.ts'
 import type { ProductRecord } from './product.interface.ts'
@@ -44,5 +46,17 @@ databaseDaoContract(async () => {
     objectNames: async (versionId) =>
       [...objects(db).values()].filter((row) => row.versionId === versionId).map((row) => row.name),
     definitionBytes: async (versionId) => versions(db).get(versionId)?.definitionBytes ?? 0,
+    addDeployment: async (id, revision, startedAt) => {
+      memoryTable<DeploymentRecord>(db, 'deployments').set(id, {
+        ...deploymentRecord(),
+        id,
+        databaseId: 'd1',
+        toVersionId: 'v-d1',
+        status: 'succeeded',
+        phase: 'finished',
+        startedAt,
+        revision,
+      })
+    },
   }
 })

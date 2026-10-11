@@ -568,7 +568,7 @@ ITエンジニアが複数プロダクトのデータベース設計を一元管
 
 ### データの取得とキャッシュ
 
-D1 は読み取った行数で課金・制限されるため、読み取り行数をなるべく減らす。データはスコープ単位でまとめて取得して端末に保持し、変更がなければサーバーから取得し直さない。
+D1 は読み取った行数で課金・制限されるため、読み取り行数をなるべく減らす。あわせて、画面から API へのリクエスト回数と、1回のリクエストで D1 に発行するクエリ回数も抑える。データはスコープ単位でまとめて取得して端末に保持し、変更がなければサーバーから取得し直さない。
 
 #### スコープ
 
@@ -576,7 +576,7 @@ D1 は読み取った行数で課金・制限されるため、読み取り行�
 | -------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
 | プロダクト一覧 | プロダクト一覧                                     | 参加しているすべてのプロダクト（プロダクト名・ターゲット・ロール・登録日・参加日）                                                                     | `users.products_revision` |
 | プロダクト     | データベース一覧・プロダクト設定・ユーザー招待     | プロダクト、データベース接続情報（パスワードを除く）、参加者・仮登録、データベース一覧（最新・確定済みのバージョン、スキーマ数・テーブル数、更新日時） | `products.revision`       |
-| データベース   | バージョン履歴・ビルド・マイグレーション           | すべてのバージョン、実行履歴、共通カラムのセット                                                                                                       | `databases.revision`      |
+| データベース   | バージョン履歴・ビルド・マイグレーション           | すべてのバージョン、実行履歴、共通カラムのセット。実行履歴は差分取得する                                                                               | `databases.revision`      |
 | バージョン     | 設計画面（オブジェクト一覧・各オブジェクトの詳細） | すべてのオブジェクト（詳細の JSON を含む）。差分取得する                                                                                               | `versions.revision`       |
 | 操作履歴       | 操作履歴                                           | 新しい順にページ単位。2回目以降は前回より新しい行だけ                                                                                                  | なし（日時で続きを取得）  |
 
@@ -588,6 +588,8 @@ D1 は読み取った行数で課金・制限されるため、読み取り行�
 - 上位のスコープの一覧に表示する値も変わる場合は、上位のリビジョンも増やす。例: オブジェクトを追加すると、バージョンのリビジョンに加えて、データベース一覧のテーブル数・更新日時が変わるので、プロダクトのリビジョンも増やす。プロダクト名の変更・プロダクトの削除・参加者の増減では、関係するユーザー全員のプロダクト一覧のリビジョンを増やす。
 - 取得するときは、端末が持っているリビジョンを送る。サーバーはリビジョンの1行だけを読み、一致すれば「変更なし」だけを返す（データの行は読まない）。
 - バージョンのスコープは差分取得する。オブジェクトには最後に変更したときのバージョンのリビジョンを記録し（`objects.revision`）、端末のリビジョンより新しい行だけを返す。削除したオブジェクトは行を消さずに削除済みとして返し、端末のキャッシュからも消す。削除済みの行は確定時に物理削除し、それより前のリビジョンからの取得は全件取得に切り替える（`versions.compacted_revision`）。
+- データベースのスコープの実行履歴も差分取得する。実行履歴には最後に変更したとき（受付・終了・接続情報の削除）のデータベースのリビジョンを記録し（`deployments.revision`）、端末のリビジョンより新しい行だけを返す。バージョンと共通カラムは件数が少ないので、毎回すべて返す。実行履歴はデータベースを完全削除するまで消えないため、削除の通知はない。
+- 端末にキャッシュがない（リビジョンを送らない）とき、または端末のリビジョンがサーバーより新しいときは、全件を返す。
 - 登録・変更・削除の API は、変更後のデータと新しいリビジョンを返す。端末はそれでキャッシュを更新し、取得し直さない。
 
 #### キャッシュ
@@ -607,7 +609,7 @@ D1 は読み取った行数で課金・制限されるため、読み取り行�
 
 - 一覧に表示する集計値（スキーマ数・テーブル数）と上限の判定に使う設計の合計サイズは versions に持ち、オブジェクトの追加・保存・削除のときに更新する。表示のたびに objects を数えない。
 - 認証はセッションの主キー、権限は `product_members` の主キー（product_id, user_id）で、それぞれ1行だけ読んで判定する。
-- すべての問い合わせは、インデックスで対象の行を絞る。主なインデックス: `product_members(user_id)`、`invitations(product_id)`、`invitations(passcode_hash)`、`connections(product_id)`、`databases(product_id)`、`versions(database_id)`、`objects(version_id, revision)`、`audit_logs(product_id, created_at)`、`deployments(connection_id, started_at)`、`passcode_failures(user_id, failed_at)`。
+- すべての問い合わせは、インデックスで対象の行を絞る。主なインデックス: `product_members(user_id)`、`invitations(product_id)`、`invitations(passcode_hash)`、`connections(product_id)`、`databases(product_id)`、`versions(database_id)`、`objects(version_id, revision)`、`audit_logs(product_id, created_at)`、`deployments(connection_id, started_at)`、`deployments(database_id, revision)`、`passcode_failures(user_id, failed_at)`。
 
 ### データ仕様
 
@@ -788,29 +790,30 @@ D1 は読み取った行数で課金・制限されるため、読み取り行�
 
 ##### deployments（ビルド・マイグレーションの実行履歴）
 
-| カラム              | 型      | 備考                                                                      |
-| ------------------- | ------- | ------------------------------------------------------------------------- |
-| id                  | TEXT    | PK                                                                        |
-| connection_id       | TEXT    | FK → connections。NULL 可（接続情報を削除したとき）                       |
-| connection_name     | TEXT    | 実行時の接続名。接続情報を削除しても表示できるよう保持する                |
-| kind                | TEXT    | `build` / `migration`                                                     |
-| from_version_id     | TEXT    | 更新前のバージョン。FK → versions。NULL 可（ビルド）                      |
-| to_version_id       | TEXT    | 適用したバージョン。FK → versions                                         |
-| status              | TEXT    | `running` / `succeeded` / `failed`                                        |
-| log                 | TEXT    | 実行ログ（JSON。手順ごとの件数・所要時間・エラー）                        |
-| executed_by         | TEXT    | FK → users                                                                |
-| started_at          | INTEGER | 開始日時                                                                  |
-| finished_at         | INTEGER | 終了日時。NULL 可                                                         |
-| product_id          | TEXT    | 履歴が属するプロダクト。FK → products                                     |
-| database_id         | TEXT    | 履歴が属するデータベース。FK → databases                                  |
-| phase               | TEXT    | 内部進捗。`preparing` / `queued` / `executing` / `finished`               |
-| idempotency_key     | TEXT    | 接続先ごとの冪等キー（UUID）                                              |
-| request_hash        | TEXT    | 再送された要求を照合するSHA-256                                           |
-| plan_hash           | TEXT    | R2に保存した固定計画のSHA-256                                             |
-| connection_snapshot | TEXT    | 受付時の接続設定（JSON）。パスワードは暗号文のまま保存し、APIには返さない |
-| target_revision     | INTEGER | 適用先の設計リビジョン                                                    |
-| source_revision     | INTEGER | 更新前の設計リビジョン。ビルドではNULL                                    |
-| executed_count      | INTEGER | 応答を確認した実行手順の数                                                |
+| カラム              | 型      | 備考                                                                                                               |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| id                  | TEXT    | PK                                                                                                                 |
+| connection_id       | TEXT    | FK → connections。NULL 可（接続情報を削除したとき）                                                                |
+| connection_name     | TEXT    | 実行時の接続名。接続情報を削除しても表示できるよう保持する                                                         |
+| kind                | TEXT    | `build` / `migration`                                                                                              |
+| from_version_id     | TEXT    | 更新前のバージョン。FK → versions。NULL 可（ビルド）                                                               |
+| to_version_id       | TEXT    | 適用したバージョン。FK → versions                                                                                  |
+| status              | TEXT    | `running` / `succeeded` / `failed`                                                                                 |
+| log                 | TEXT    | 実行ログ（JSON。手順ごとの件数・所要時間・エラー）                                                                 |
+| executed_by         | TEXT    | FK → users                                                                                                         |
+| started_at          | INTEGER | 開始日時                                                                                                           |
+| finished_at         | INTEGER | 終了日時。NULL 可                                                                                                  |
+| product_id          | TEXT    | 履歴が属するプロダクト。FK → products                                                                              |
+| database_id         | TEXT    | 履歴が属するデータベース。FK → databases                                                                           |
+| phase               | TEXT    | 内部進捗。`preparing` / `queued` / `executing` / `finished`                                                        |
+| idempotency_key     | TEXT    | 接続先ごとの冪等キー（UUID）                                                                                       |
+| request_hash        | TEXT    | 再送された要求を照合するSHA-256                                                                                    |
+| plan_hash           | TEXT    | R2に保存した固定計画のSHA-256                                                                                      |
+| connection_snapshot | TEXT    | 受付時の接続設定（JSON）。パスワードは暗号文のまま保存し、APIには返さない                                          |
+| target_revision     | INTEGER | 適用先の設計リビジョン                                                                                             |
+| source_revision     | INTEGER | 更新前の設計リビジョン。ビルドではNULL                                                                             |
+| executed_count      | INTEGER | 応答を確認した実行手順の数                                                                                         |
+| revision            | INTEGER | 最後に変更したとき（受付・終了・接続情報の削除）のデータベースのリビジョン。データベースのスコープの差分取得に使う |
 
 - 接続先データベースの適用済みバージョンは、接続先データベース内のバージョン管理テーブル（`_dbcenter`）を正とする。この表は画面表示用の履歴。
 

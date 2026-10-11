@@ -19,6 +19,8 @@ export interface DatabaseDaoFixture {
   /** Physical names of a version's objects. */
   objectNames: (versionId: string) => Promise<string[]>
   definitionBytes: (versionId: string) => Promise<number>
+  /** A finished deployment of d1's v1 in p1, last changed at database revision `revision`. */
+  addDeployment: (id: string, revision: number, startedAt: number) => Promise<void>
 }
 
 /**
@@ -278,7 +280,6 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
     expect(await f.dao.findScope('p1', 'd1')).toEqual({
       database: database('d1'),
       commonColumns: null,
-      deployments: [],
       versions: [
         {
           id: 'v-d1',
@@ -303,6 +304,38 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
     expect(await f.dao.findScope('p1', 'missing')).toBeNull()
     await f.markProductDeleted('p1')
     expect(await f.dao.findScope('p1', 'd1')).toBeNull()
+  })
+
+  test('reads the deployments only when asked, and only those changed since a revision', async () => {
+    const f = await arrange()
+    await create(f, 'd1')
+    await f.addMember('p1', 'u2', 'member')
+    // Two changes: the database is at revision 3.
+    for (const expectedRevision of [1, 2]) {
+      await f.dao.saveCommonColumns({
+        productId: 'p1',
+        databaseId: 'd1',
+        commonColumns: '[]',
+        expectedRevision,
+        userId: 'u1',
+        allowedRoles: ['owner'],
+      })
+    }
+    await f.addDeployment('x1', 1, 1000)
+    await f.addDeployment('x2', 3, 2000)
+    const ids = async (since?: number) =>
+      (await f.dao.findScope('p1', 'd1', { deployments: { since } }))?.deployments?.map(
+        (deployment) => deployment.id,
+      )
+
+    expect((await f.dao.findScope('p1', 'd1'))?.deployments).toBeUndefined()
+    // Every one, newest first: no revision held, or one the server never gave out.
+    expect(await ids()).toEqual(['x2', 'x1'])
+    expect(await ids(4)).toEqual(['x2', 'x1'])
+    // Only those changed after the client's revision.
+    expect(await ids(1)).toEqual(['x2'])
+    expect(await ids(2)).toEqual(['x2'])
+    expect(await ids(3)).toEqual([])
   })
 
   test('refuses a name in use in the product, changing nothing', async () => {

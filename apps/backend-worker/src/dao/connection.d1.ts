@@ -109,6 +109,12 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
           'UPDATE databases SET revision=revision+1 WHERE id IN (SELECT database_id FROM deployments WHERE connection_id=?)',
         )
         .bind(connectionId),
+      // Its deployments change (no connection any more): they record the new database revision.
+      db
+        .prepare(
+          'UPDATE deployments SET revision=(SELECT revision FROM databases WHERE id=deployments.database_id) WHERE connection_id=?',
+        )
+        .bind(connectionId),
       db
         .prepare(
           "DELETE FROM connections WHERE id = ? AND product_id = ? AND updated_at = ? AND NOT EXISTS(SELECT 1 FROM deployments WHERE connection_id=connections.id AND status='running')",
@@ -118,7 +124,7 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
       bumpProductRevision(db, productId),
       insertAuditLog(db, audit),
     ])
-    return { productRevision: revisionAt(results, 4) }
+    return { productRevision: revisionAt(results, 5) }
   },
 
   reorder: async ({ productId, connectionIds, expectedRevision, userId, allowedRoles, audit }) => {

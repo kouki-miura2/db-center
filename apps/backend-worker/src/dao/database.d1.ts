@@ -7,7 +7,7 @@ import type {
 } from 'backend/src/dao/database.interface.ts'
 
 import { guard, insertAuditLog, limitGuard, runBatch, staleGuard } from './batch.ts'
-import { selectDeployments, toDeploymentRecord } from './deployment.d1.ts'
+import { toDeploymentRecord } from './deployment.d1.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
 interface DatabaseRow {
@@ -119,6 +119,10 @@ export const toDatabaseSummary = (row: DatabaseSummaryRow): DatabaseSummaryRecor
 const revisionAt = (results: D1Result[], index: number) =>
   (results[index]?.results[0] as { revision: number } | undefined)?.revision ?? 0
 
+// Whether deployments can be answered with a delta from revision ?2 (NULL: none): at most the
+// database's revision `d.revision`.
+const DEPLOYMENTS_DELTA = '?2 IS NOT NULL AND ?2 <= d.revision'
+
 /** D1 `DatabaseDao` (databases, and the v1 and schema a new database starts with). */
 export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
   findVersion: async (productId, versionId) => {
@@ -135,12 +139,28 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
     return row ? toDatabaseRecord(row) : null
   },
 
-  findScope: async (productId, databaseId) => {
-    // One batch is one transaction, so the versions match the database's revision.
-    const [database, versions, deployments] = await db.batch([
+  findScope: async (productId, databaseId, options = {}) => {
+    const since = options.deployments?.since ?? null
+    // One batch is one transaction, so the versions and deployments match the database's
+    // revision. Deployments: the delta or every one, decided on the database row in the same
+    // statement (the outer loop), so the other statement reads no deployment.
+    const [database, versions, ...deployments] = await db.batch([
       db.prepare(ACTIVE_DATABASE).bind(databaseId, productId),
       db.prepare('SELECT * FROM versions WHERE database_id = ?').bind(databaseId),
-      selectDeployments(db, databaseId),
+      ...(options.deployments
+        ? [
+            db
+              .prepare(
+                `SELECT x.* FROM databases d JOIN deployments x ON x.database_id = d.id AND x.revision > ?2 WHERE d.id = ?1 AND ${DEPLOYMENTS_DELTA} ORDER BY x.started_at DESC, x.id DESC`,
+              )
+              .bind(databaseId, since),
+            db
+              .prepare(
+                `SELECT x.* FROM databases d JOIN deployments x ON x.database_id = d.id WHERE d.id = ?1 AND NOT (${DEPLOYMENTS_DELTA}) ORDER BY x.started_at DESC, x.id DESC`,
+              )
+              .bind(databaseId, since),
+          ]
+        : []),
     ])
     const row = database?.results[0] as
       | (DatabaseRow & { common_columns: string | null })
@@ -150,9 +170,13 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
       database: toDatabaseRecord(row),
       commonColumns: row.common_columns,
       versions: ((versions?.results ?? []) as VersionRow[]).map(toVersionRecord),
-      deployments: ((deployments?.results ?? []) as Record<string, unknown>[]).map(
-        toDeploymentRecord,
-      ),
+      ...(options.deployments
+        ? {
+            deployments: deployments
+              .flatMap((result) => result.results as Record<string, unknown>[])
+              .map(toDeploymentRecord),
+          }
+        : {}),
     }
   },
 

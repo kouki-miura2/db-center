@@ -24,6 +24,7 @@ export const deploymentRecord = (): DeploymentRecord => ({
   targetRevision: 1,
   sourceRevision: null,
   executedCount: 0,
+  revision: 0,
 })
 export const deploymentDaoContract = (
   setup: () => Promise<{
@@ -94,6 +95,8 @@ export const deploymentDaoContract = (
     const f = await setup(),
       r = { ...deploymentRecord(), startedAt: 1000 }
     await accept(f.dao, r)
+    // Each change records the database revision it made.
+    expect((await f.dao.findById(r.id))!.revision).toBe(await f.revision())
     expect((await f.dao.listRunning(999)).map((v) => v.id)).toEqual([])
     expect((await f.dao.listRunning(1000)).map((v) => v.id)).toEqual([r.id])
     await f.dao.queue(r.id)
@@ -123,6 +126,7 @@ export const deploymentDaoContract = (
       log: '{"code":"outcome_unknown"}',
     })
     expect(await f.revision()).toBe(revision + 1)
+    expect((await f.dao.findById(r.id))!.revision).toBe(revision + 1)
     expect(await f.audits()).toBe(2)
     expect(await abandon('executing', 3)).toBe(false)
     expect(await f.dao.listRunning(5000)).toEqual([])

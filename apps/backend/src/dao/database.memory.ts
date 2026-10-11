@@ -85,14 +85,22 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
     return product && product.deletedAt === null && row ? toRecord(row) : null
   },
 
-  findScope: async (productId, databaseId) => {
+  findScope: async (productId, databaseId, options = {}) => {
     const product = memoryTable<{ deletedAt: number | null }>(db, 'products').get(productId)
     const row = inProduct(db, productId, databaseId)
     if (!product || product.deletedAt !== null || !row) return null
+    const since = options.deployments?.since
+    const delta = since !== undefined && since <= row.revision
     return {
       database: toRecord(row),
       commonColumns: row.commonColumns,
-      deployments: memoryDeployments(db, databaseId),
+      ...(options.deployments
+        ? {
+            deployments: memoryDeployments(db, databaseId).filter(
+              (deployment) => !delta || deployment.revision > since,
+            ),
+          }
+        : {}),
       versions: [...versions(db).values()]
         .filter((version) => version.databaseId === databaseId)
         .map((version) => ({ ...version })),

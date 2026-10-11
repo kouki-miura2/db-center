@@ -84,9 +84,16 @@ export interface DatabaseDao {
   findById: (productId: string, databaseId: string) => Promise<DatabaseRecord | null>
   /**
    * The database scope, read together so it matches the database's revision. Null if the
-   * database or its product is deleted, or it isn't the product's.
+   * database or its product is deleted, or it isn't the product's. Deployments are read only when
+   * asked for: every one (`{}`), or, given the revision a client holds (`{ since }`), only those
+   * changed after it (`revision > since`) while `since` is at most the database's revision, and
+   * every one otherwise.
    */
-  findScope: (productId: string, databaseId: string) => Promise<DatabaseScopeRecord | null>
+  findScope: (
+    productId: string,
+    databaseId: string,
+    options?: { deployments?: { since?: number } },
+  ) => Promise<DatabaseScopeRecord | null>
   /**
    * Creates a database with its v1 (editing) holding `schema`, if any. Throws `duplicate` if a
    * database of the product (deleted ones aside) has the name, and `limit_exceeded` beyond

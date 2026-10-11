@@ -68,8 +68,8 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
           )
         )
           throw new AppError('duplicate')
-        rows().set(r.id, { ...r })
         database.revision++
+        rows().set(r.id, { ...r, revision: database.revision })
         bumpProductRevision(db, r.productId)
         appendAuditLog(db, audit)
       }),
@@ -114,7 +114,10 @@ const closeDeployment =
     r.log = log
     r.finishedAt = now
     const database = memoryTable<DatabaseRecord>(db, 'databases').get(r.databaseId)
-    if (database) database.revision++
+    if (database) {
+      database.revision++
+      r.revision = database.revision
+    }
     bumpProductRevision(db, r.productId)
     appendAuditLog(db, {
       id: crypto.randomUUID(),

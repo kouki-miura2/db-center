@@ -295,6 +295,7 @@ export const createDeploymentService = (deps: {
         targetRevision: plan.target.revision,
         sourceRevision: plan.source?.revision ?? null,
         executedCount: 0,
+        revision: 0,
       }
       try {
         await deps.deployments.accept({

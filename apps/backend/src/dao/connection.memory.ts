@@ -72,16 +72,16 @@ export const createConnectionMemoryDao = (db: MemoryDb): ConnectionDao => ({
         [...history.values()].some((v) => v.connectionId === connectionId && v.status === 'running')
       )
         throw new AppError('invalid_state')
-      const affected = new Set<string>()
-      history.forEach((v) => {
-        if (v.connectionId === connectionId) {
-          v.connectionId = null
-          affected.add(v.databaseId)
-        }
-      })
-      affected.forEach((id) => {
-        const database = memoryTable<{ revision: number }>(db, 'databases').get(id)
+      const touched = [...history.values()].filter((v) => v.connectionId === connectionId)
+      const databases = memoryTable<{ revision: number }>(db, 'databases')
+      new Set(touched.map((v) => v.databaseId)).forEach((id) => {
+        const database = databases.get(id)
         if (database) database.revision++
+      })
+      // Its deployments change (no connection any more): they record the new database revision.
+      touched.forEach((v) => {
+        v.connectionId = null
+        v.revision = databases.get(v.databaseId)?.revision ?? v.revision
       })
       const productRevision = bumpProductRevision(db, productId)
       appendAuditLog(db, audit)
