@@ -54,7 +54,23 @@ const OWNER_HAS_NAME = `EXISTS (
     AND m.user_id = (SELECT user_id FROM product_members WHERE product_id = ? AND role = 'owner')
 )`
 
-const productsRevisionOf = (db: D1Database, userId: string) =>
+/** Fails the batch with `stale_update` if the actor lost the role since the service checked it. */
+export const actorHasRole = (
+  db: D1Database,
+  productId: string,
+  userId: string,
+  allowedRoles: Role[],
+) =>
+  guard(
+    db,
+    'stale_update',
+    `NOT EXISTS (SELECT 1 FROM product_members WHERE product_id = ? AND user_id = ? AND role IN (${allowedRoles.map(() => '?').join(', ')}))`,
+    productId,
+    userId,
+    ...allowedRoles,
+  )
+
+export const productsRevisionOf = (db: D1Database, userId: string) =>
   db.prepare('SELECT products_revision FROM users WHERE id = ?').bind(userId)
 
 /** D1 `ProductDao` (products and product_members). */
@@ -155,15 +171,7 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
 
   rename: async ({ productId, name, expectedUpdatedAt, now, userId, allowedRoles, audit }) => {
     const results = await runBatch(db, [
-      // The actor may have lost the role since the service checked it.
-      guard(
-        db,
-        'stale_update',
-        `NOT EXISTS (SELECT 1 FROM product_members WHERE product_id = ? AND user_id = ? AND role IN (${allowedRoles.map(() => '?').join(', ')}))`,
-        productId,
-        userId,
-        ...allowedRoles,
-      ),
+      actorHasRole(db, productId, userId, allowedRoles),
       db
         .prepare(
           'UPDATE products SET name = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL RETURNING *',
@@ -178,5 +186,22 @@ export const createProductD1Dao = (db: D1Database): ProductDao => ({
     const product = results[1]?.results[0] as ProductRow
     const revision = results[5]?.results[0] as { products_revision: number }
     return { product: toProduct(product), productsRevision: revision.products_revision }
+  },
+
+  delete: async ({ productId, expectedUpdatedAt, now, userId, allowedRoles, audit }) => {
+    const results = await runBatch(db, [
+      actorHasRole(db, productId, userId, allowedRoles),
+      db
+        .prepare(
+          'UPDATE products SET deleted_at = ?, updated_at = max(?, updated_at + 1), revision = revision + 1 WHERE id = ? AND updated_at = ? AND deleted_at IS NULL',
+        )
+        .bind(now, now, productId, expectedUpdatedAt),
+      staleGuard(db),
+      bumpMembersProductsRevision(db, productId),
+      productsRevisionOf(db, userId),
+      insertAuditLog(db, audit),
+    ])
+    const revision = results[4]?.results[0] as { products_revision: number }
+    return { productsRevision: revision.products_revision }
   },
 })

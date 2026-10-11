@@ -32,6 +32,7 @@ const fakeDao: ProductDao = {
     return { productsRevision: 8 }
   },
   rename: async () => ({ product: { ...record, name: 'renamed' }, productsRevision: 9 }),
+  delete: async () => ({ productsRevision: 10 }),
 }
 
 const product = {

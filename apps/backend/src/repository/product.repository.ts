@@ -45,6 +45,7 @@ export interface ProductRepository {
     allowedRoles: Role[]
     audit: AuditLogRecord
   }) => Promise<{ product: Product; productsRevision: number }>
+  delete: ProductDao['delete']
 }
 
 const toProduct = (record: ProductRecord): Product => ({
@@ -82,4 +83,5 @@ export const createProductRepository = (dao: ProductDao): ProductRepository => (
     const { product, productsRevision } = await dao.rename(input)
     return { product: toProduct(product), productsRevision }
   },
+  delete: (input) => dao.delete(input),
 })

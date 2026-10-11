@@ -23,6 +23,7 @@ const fakeProducts = (overrides: Partial<ProductRepository> = {}): ProductReposi
   listForUser: async () => ({ revision: 5, memberships: [] }),
   create: async () => ({ productsRevision: 6 }),
   rename: async () => ({ product: product(), productsRevision: 6 }),
+  delete: async () => ({ productsRevision: 6 }),
   ...overrides,
 })
 
@@ -184,4 +185,45 @@ test('hides the product scope from a non-member', async () => {
   await expect(service.getProduct({ userId: 'u9', productId: 'p1' })).rejects.toMatchObject({
     code: 'not_found',
   })
+})
+
+test('deletes a product for its owner once the name is confirmed', async () => {
+  const remove = vi.fn<ProductRepository['delete']>(async () => ({ productsRevision: 7 }))
+  const service = createProductService({
+    products: fakeProducts({ findMembership: async () => membership('owner'), delete: remove }),
+  })
+
+  expect(
+    await service.deleteProduct({
+      userId: 'u1',
+      productId: 'p1',
+      confirmationName: 'shop',
+      expectedUpdatedAt: 2,
+    }),
+  ).toEqual({ revisions: { products: 7 } })
+  expect(remove.mock.calls[0]?.[0]).toMatchObject({
+    allowedRoles: ['owner'],
+    expectedUpdatedAt: 2,
+    audit: { action: 'delete', summary: 'shop' },
+  })
+})
+
+test('refuses to delete without the exact name, or as a manager', async () => {
+  const remove = vi.fn()
+  const input = { userId: 'u1', productId: 'p1', confirmationName: 'shop', expectedUpdatedAt: 2 }
+  const asOwner = createProductService({
+    products: fakeProducts({ findMembership: async () => membership('owner'), delete: remove }),
+  })
+  const asManager = createProductService({
+    products: fakeProducts({ findMembership: async () => membership('manager'), delete: remove }),
+  })
+
+  await expect(asOwner.deleteProduct({ ...input, confirmationName: 'Shop' })).rejects.toMatchObject(
+    {
+      code: 'invalid_input',
+      fields: { confirmationName: '名前が一致しません' },
+    },
+  )
+  await expect(asManager.deleteProduct(input)).rejects.toMatchObject({ code: 'forbidden' })
+  expect(remove).not.toHaveBeenCalled()
 })

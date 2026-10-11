@@ -42,6 +42,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       getProduct: unused,
       createProduct: unused,
       renameProduct: unused,
+      deleteProduct: unused,
     },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.development,

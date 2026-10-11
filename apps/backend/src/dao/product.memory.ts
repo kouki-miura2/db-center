@@ -123,4 +123,22 @@ export const createProductMemoryDao = (db: MemoryDb): ProductDao => ({
       appendAuditLog(db, audit)
       return { product: { ...product }, productsRevision }
     }),
+
+  delete: async ({ productId, expectedUpdatedAt, now, userId, allowedRoles, audit }) =>
+    atomic(db, () => {
+      const actor = members(db).get(memberKey(productId, userId))
+      if (!actor || !allowedRoles.includes(actor.role)) throw new AppError('stale_update')
+      const product = assertCurrent(activeProduct(db, productId), expectedUpdatedAt)
+      product.deletedAt = now
+      product.updatedAt = nextUpdatedAt(now, product.updatedAt)
+      product.revision += 1
+      let productsRevision = 0
+      members(db).forEach((row) => {
+        if (row.productId !== productId) return
+        const revision = bumpProductsRevision(db, row.userId)
+        if (row.userId === userId) productsRevision = revision
+      })
+      appendAuditLog(db, audit)
+      return { productsRevision }
+    }),
 })

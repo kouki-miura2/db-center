@@ -70,4 +70,18 @@ export interface ProductDao {
     allowedRoles: Role[]
     audit: AuditLogRecord
   }) => Promise<{ product: ProductRecord; productsRevision: number }>
+  /**
+   * Marks a product deleted with optimistic locking, bumping every member's product list revision,
+   * with the audit log entry. Its databases and everything under them become unreachable with it.
+   * Throws `stale_update` if it changed or was deleted since `expectedUpdatedAt`, or if `userId`
+   * no longer has one of `allowedRoles`.
+   */
+  delete: (input: {
+    productId: string
+    expectedUpdatedAt: number
+    now: number
+    userId: string
+    allowedRoles: Role[]
+    audit: AuditLogRecord
+  }) => Promise<{ productsRevision: number }>
 }

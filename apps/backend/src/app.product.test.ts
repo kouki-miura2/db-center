@@ -239,3 +239,25 @@ test('a deleted product is gone from its scope', async () => {
 
   expect((await app.request(`/api/products/${body.product.id}`, as('u1'))).status).toBe(404)
 })
+
+test('the owner deletes a product after typing its name; it is gone for everyone', async () => {
+  const { body } = await createProduct('u1', 'shop')
+  const { id, updatedAt } = body.product
+  addMember(id, 'u2', 'manager')
+  const remove = (userId: string, confirmationName: string) =>
+    app.request(
+      `/api/products/${id}`,
+      as(userId, 'DELETE', { confirmationName, expectedUpdatedAt: updatedAt }),
+    )
+
+  expect((await remove('u2', 'shop')).status).toBe(403)
+  expect((await remove('u1', 'shop?')).status).toBe(400)
+  const deleted = await remove('u1', 'shop')
+  expect(await deleted.json()).toEqual({ revisions: { products: 3 } })
+
+  expect((await app.request(`/api/products/${id}`, as('u2'))).status).toBe(404)
+  const list = await (await app.request('/api/products', as('u2'))).json()
+  expect(list.data).toEqual([])
+  // Its name is free again.
+  expect((await createProduct('u1', 'shop')).res.status).toBe(200)
+})

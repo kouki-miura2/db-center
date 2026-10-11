@@ -160,6 +160,45 @@ export const productDaoContract = (setup: () => Promise<ProductDaoFixture>) => {
     expect(await f.countAuditLogs()).toBe(1)
   })
 
+  const remove = (dao: ProductDao, overrides: Partial<Parameters<ProductDao['delete']>[0]> = {}) =>
+    dao.delete({
+      productId: 'p1',
+      expectedUpdatedAt: 1000,
+      now: 3000,
+      userId: 'u1',
+      allowedRoles: ['owner'],
+      audit: audit('a-delete', 'p1'),
+      ...overrides,
+    })
+
+  test('deletes a product: gone for every member, with their list revisions bumped', async () => {
+    const f = await setup()
+    await create(f.dao, 'p1')
+    await f.addMember('p1', 'u2', 'manager')
+
+    expect(await remove(f.dao)).toEqual({ productsRevision: 3 })
+
+    expect(await f.dao.findMembership('p1', 'u1')).toBeNull()
+    expect(await f.dao.findScope('p1')).toBeNull()
+    expect((await f.dao.listForUser('u2')).memberships).toEqual([])
+    expect(await f.productsRevision('u2')).toBe(2)
+    expect(await f.countAuditLogs()).toBe(2)
+  })
+
+  test.each([
+    ['a stale updated_at', { expectedUpdatedAt: 999 }],
+    ['an actor who isn’t the owner', { userId: 'u2' }],
+  ])('refuses a delete with %s, changing nothing', async (_, overrides) => {
+    const f = await setup()
+    await create(f.dao, 'p1')
+    await f.addMember('p1', 'u2', 'manager')
+
+    await expect(remove(f.dao, overrides)).rejects.toMatchObject({ code: 'stale_update' })
+    expect(await f.dao.findScope('p1')).not.toBeNull()
+    expect(await f.productsRevision('u2')).toBe(1)
+    expect(await f.countAuditLogs()).toBe(1)
+  })
+
   test('refuses to rename a deleted product', async () => {
     const f = await setup()
     await create(f.dao, 'p1')

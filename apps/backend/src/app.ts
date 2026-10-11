@@ -284,6 +284,25 @@ export const createApp = (deps: AppDependencies) => {
           )
         },
       )
+      // Deleting needs the product's name typed again ("総論 > 共通ルール > 削除").
+      .delete(
+        '/products/:productId',
+        validate('param', productId),
+        validate(
+          'json',
+          z.strictObject({ confirmationName: z.string().max(200), expectedUpdatedAt }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.productService.deleteProduct({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
       // Development login: signs in as any email without Google. Answers 404 unless the runtime
       // package turned it on explicitly and the request is to localhost.
       .post(

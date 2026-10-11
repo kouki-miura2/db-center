@@ -74,6 +74,13 @@ export interface ProductService {
     name: string
     expectedUpdatedAt: number
   }) => Promise<{ product: ProductView; revisions: { products: number; product: number } }>
+  /** Owner only; `confirmationName` must be the product's current name. */
+  deleteProduct: (input: {
+    userId: string
+    productId: string
+    confirmationName: string
+    expectedUpdatedAt: number
+  }) => Promise<{ revisions: { products: number } }>
 }
 
 const toListItem = ({ product, role, joinedAt }: Membership): ProductListItemView => ({
@@ -117,6 +124,15 @@ const explain = (error: unknown): never => {
     })
   }
   throw error
+}
+
+/** The second deletion confirmation ("総論 > 共通ルール > 削除"), checked by the API as well. */
+export const assertConfirmationName = (confirmationName: string, name: string): void => {
+  if (confirmationName !== name) {
+    throw new AppError('invalid_input', {
+      fields: { confirmationName: '名前が一致しません' },
+    })
+  }
 }
 
 /**
@@ -222,5 +238,27 @@ export const createProductService = (deps: { products: ProductRepository }): Pro
       product: toView(product),
       revisions: { products: productsRevision, product: product.revision },
     }
+  },
+
+  deleteProduct: async ({ userId, productId, confirmationName, expectedUpdatedAt }) => {
+    const { product, role } = await requireMembership(deps.products, productId, userId)
+    assertAllowed(role, 'deleteProduct')
+    assertConfirmationName(confirmationName, product.name)
+    const now = Date.now()
+    const { productsRevision } = await deps.products.delete({
+      productId,
+      expectedUpdatedAt,
+      now,
+      userId,
+      allowedRoles: allowedRoles('deleteProduct'),
+      audit: auditEntry({
+        productId,
+        userId,
+        action: 'delete',
+        summary: product.name,
+        createdAt: now,
+      }),
+    })
+    return { revisions: { products: productsRevision } }
   },
 })
