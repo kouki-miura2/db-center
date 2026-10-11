@@ -1204,53 +1204,59 @@ test('database cloning accepts only an accessible final source and preserves des
   ).toBe(200)
 })
 
-test('migration export authorizes both frozen versions and verifies the database scope without writes', async () => {
-  const { body } = await createProduct('u1', 'migration-product')
-  const productId = body.product.id
-  addMember(productId, 'u2', 'member')
-  const { database } = await (
-    await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
-  ).json()
-  const id = database.latestVersion.id,
-    path = `/api/versions/${id}`,
-    route = `/api/databases/${database.id}/migration-script`
-  const input = { fromVersionId: id, toVersionId: id }
-  expect((await app.request(route, as('u1', 'POST', input))).status).toBe(409)
-  const initial = (await (await app.request(path, as('u1'))).json()).data.version
-  await app.request(
-    `${path}/provisional`,
-    as('u1', 'POST', { expectedRevision: initial.revision, expectedUpdatedAt: initial.updatedAt }),
-  )
-  const before = await (await app.request(path, as('u1'))).json()
-  expect((await app.request(route, as('u3', 'POST', input))).status).toBe(404)
-  expect(
-    (
-      await app.request(
-        `/api/databases/${crypto.randomUUID()}/migration-script`,
-        as('u1', 'POST', input),
-      )
-    ).status,
-  ).toBe(404)
-  expect(
-    (await app.request(route, as('u1', 'POST', { ...input, toVersionId: crypto.randomUUID() })))
-      .status,
-  ).toBe(404)
-  expect(
-    (await app.request(route, as('u2', 'POST', { ...input, options: { lockTimeoutMs: -1 } })))
-      .status,
-  ).toBe(400)
-  expect(
-    (await app.request(route, as('u2', 'POST', { ...input, options: { unknown: true } }))).status,
-  ).toBe(400)
-  const response = await app.request(route, as('u2', 'POST', input))
-  expect(response.status).toBe(200)
-  expect(await response.json()).toMatchObject({
-    complete: true,
-    difference: { counts: { added: 0, changed: 0, deleted: 0 } },
-    fileName: 'main_v1_to_v1.sql',
-  })
-  expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
-})
+test.each(['postgresql18', 'sqlite3'] as const)(
+  '%s migration export authorizes both frozen versions and verifies the database scope without writes',
+  async (target) => {
+    const { body } = await createProduct('u1', 'migration-product', target)
+    const productId = body.product.id
+    addMember(productId, 'u2', 'member')
+    const { database } = await (
+      await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+    ).json()
+    const id = database.latestVersion.id,
+      path = `/api/versions/${id}`,
+      route = `/api/databases/${database.id}/migration-script`
+    const input = { fromVersionId: id, toVersionId: id }
+    expect((await app.request(route, as('u1', 'POST', input))).status).toBe(409)
+    const initial = (await (await app.request(path, as('u1'))).json()).data.version
+    await app.request(
+      `${path}/provisional`,
+      as('u1', 'POST', {
+        expectedRevision: initial.revision,
+        expectedUpdatedAt: initial.updatedAt,
+      }),
+    )
+    const before = await (await app.request(path, as('u1'))).json()
+    expect((await app.request(route, as('u3', 'POST', input))).status).toBe(404)
+    expect(
+      (
+        await app.request(
+          `/api/databases/${crypto.randomUUID()}/migration-script`,
+          as('u1', 'POST', input),
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (await app.request(route, as('u1', 'POST', { ...input, toVersionId: crypto.randomUUID() })))
+        .status,
+    ).toBe(404)
+    expect(
+      (await app.request(route, as('u2', 'POST', { ...input, options: { lockTimeoutMs: -1 } })))
+        .status,
+    ).toBe(400)
+    expect(
+      (await app.request(route, as('u2', 'POST', { ...input, options: { unknown: true } }))).status,
+    ).toBe(400)
+    const response = await app.request(route, as('u2', 'POST', input))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      complete: true,
+      difference: { counts: { added: 0, changed: 0, deleted: 0 } },
+      fileName: 'main_v1_to_v1.sql',
+    })
+    expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
+  },
+)
 
 test('finalize and new version routes enforce state, permissions and compacted cache reads', async () => {
   const { body } = await createProduct('u1', 'version-final')
