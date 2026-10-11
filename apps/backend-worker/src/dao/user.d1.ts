@@ -88,4 +88,15 @@ export const createUserD1Dao = (db: D1Database): UserDao => ({
   deleteSession: async (sessionId) => {
     await db.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run()
   },
+  recordConsent: async ({ userId, termsVersion, agreedAt }) => {
+    const [updated] = await runBatch(db, [
+      db
+        .prepare(
+          'UPDATE users SET terms_version = ?, agreed_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING *',
+        )
+        .bind(termsVersion, agreedAt, userId),
+      staleGuard(db),
+    ])
+    return toRecord(updated?.results[0] as UserRow)
+  },
 })

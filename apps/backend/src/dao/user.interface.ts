@@ -40,4 +40,10 @@ export interface UserDao {
   findSessionUser: (sessionId: string, now: number) => Promise<UserRecord | null>
   /** Deletes the session if it exists. */
   deleteSession: (sessionId: string) => Promise<void>
+  /** Records consent to a terms version. Throws `stale_update` if the user is gone or withdrawn. */
+  recordConsent: (consent: {
+    userId: string
+    termsVersion: string
+    agreedAt: number
+  }) => Promise<UserRecord>
 }

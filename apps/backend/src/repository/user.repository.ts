@@ -16,6 +16,11 @@ export interface UserRepository {
     session: SessionRecord,
   ) => Promise<User>
   deleteSession: (sessionId: string) => Promise<void>
+  recordConsent: (consent: {
+    userId: string
+    termsVersion: string
+    agreedAt: number
+  }) => Promise<User>
 }
 
 const toUser = (record: UserRecord): User | null =>
@@ -34,4 +39,5 @@ export const createUserRepository = (dao: UserDao): UserRepository => ({
   },
   recordLogin: async (login, session) => toUser(await dao.recordLogin(login, session)) as User,
   deleteSession: (sessionId) => dao.deleteSession(sessionId),
+  recordConsent: async (consent) => toUser(await dao.recordConsent(consent)) as User,
 })

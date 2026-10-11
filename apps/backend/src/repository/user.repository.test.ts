@@ -24,6 +24,7 @@ const fakeDao = (found: UserRecord | null): UserDao => ({
   recordLogin: async (login) => record({ email: login.email, lastLoginAt: login.lastLoginAt }),
   findSessionUser: async () => found,
   deleteSession: async () => {},
+  recordConsent: async (consent) => record({ termsVersion: consent.termsVersion }),
 })
 
 test('maps a stored user to the domain user', async () => {
@@ -45,9 +46,12 @@ test('treats a withdrawn user as not found', async () => {
   expect(await repository.findByGoogleSub('sub-1')).toBeNull()
 })
 
-test('returns the registered and the signed-in user in the domain shape', async () => {
+test('returns the registered, signed-in and consenting user in the domain shape', async () => {
   const repository = createUserRepository(fakeDao(null))
 
+  expect(
+    await repository.recordConsent({ userId: 'u1', termsVersion: 'v2', agreedAt: 2 }),
+  ).toMatchObject({ termsVersion: 'v2' })
   expect(await repository.register(record(), session)).toMatchObject({ id: 'u1' })
   expect(
     await repository.recordLogin({ userId: 'u1', email: 'b@example.com', lastLoginAt: 2 }, session),

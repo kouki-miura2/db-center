@@ -46,6 +46,11 @@ export interface AuthService {
   }) => Promise<RegisterResult>
   /** Ends the session of this cookie token, if it still exists. */
   signOut: (sessionToken: string) => Promise<void>
+  /** Agreement to the current terms by a signed-in user whose agreed version is older. */
+  consent: (input: {
+    userId: string
+    termsVersion: string
+  }) => Promise<{ user: AuthUserView; consentRequired: false }>
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -71,6 +76,16 @@ const verifyOrThrow = async (verifier: GoogleIdTokenVerifier, idToken: string) =
     })
   }
   return identity
+}
+
+// The client agreed to a version that is no longer current (the terms changed meanwhile).
+const assertCurrentTerms = (termsVersion: string) => {
+  if (termsVersion !== TERMS_VERSION) {
+    throw new AppError('invalid_state', {
+      message:
+        '利用規約・プライバシーポリシーが更新されました。最新の内容を確認して同意してください',
+    })
+  }
 }
 
 const alreadyRegistered = () =>
@@ -111,12 +126,7 @@ export const createAuthService = (deps: {
 
   register: async ({ idToken, name, termsVersion }) => {
     const identity = await verifyOrThrow(deps.verifier, idToken)
-    if (termsVersion !== TERMS_VERSION) {
-      throw new AppError('invalid_state', {
-        message:
-          '利用規約・プライバシーポリシーが更新されました。最新の内容を確認して同意してください',
-      })
-    }
+    assertCurrentTerms(termsVersion)
     if (await deps.users.findByGoogleSub(identity.sub)) throw alreadyRegistered()
     const now = Date.now()
     const userId = crypto.randomUUID()
@@ -147,5 +157,11 @@ export const createAuthService = (deps: {
 
   signOut: async (sessionToken) => {
     await deps.users.deleteSession(await hashSessionToken(sessionToken))
+  },
+
+  consent: async ({ userId, termsVersion }) => {
+    assertCurrentTerms(termsVersion)
+    const user = await deps.users.recordConsent({ userId, termsVersion, agreedAt: Date.now() })
+    return { user: toView(user), consentRequired: false }
   },
 })

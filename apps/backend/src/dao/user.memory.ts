@@ -37,4 +37,12 @@ export const createUserMemoryDao = (db: MemoryDb): UserDao => ({
   deleteSession: async (sessionId) => {
     sessions(db).delete(sessionId)
   },
+  recordConsent: async ({ userId, termsVersion, agreedAt }) =>
+    atomic(db, () => {
+      const user = users(db).get(userId)
+      if (!user || user.deletedAt !== null) throw new AppError('stale_update')
+      user.termsVersion = termsVersion
+      user.agreedAt = agreedAt
+      return { ...user }
+    }),
 })

@@ -29,6 +29,7 @@ const fakeUsers = (found: User | null, overrides: Partial<UserRepository> = {}) 
     registered: [] as UserRecord[],
     sessions: [] as SessionRecord[],
     deleted: [] as string[],
+    consents: [] as { userId: string; termsVersion: string; agreedAt: number }[],
   }
   const users: UserRepository = {
     findByGoogleSub: async () => found,
@@ -48,6 +49,10 @@ const fakeUsers = (found: User | null, overrides: Partial<UserRepository> = {}) 
     },
     deleteSession: async (sessionId) => {
       calls.deleted.push(sessionId)
+    },
+    recordConsent: async (consent) => {
+      calls.consents.push(consent)
+      return { ...existing, termsVersion: consent.termsVersion }
     },
     ...overrides,
   }
@@ -152,4 +157,32 @@ test('signs out by deleting the hashed session', async () => {
   await createAuthService({ verifier: verifier(), users }).signOut('token')
 
   expect(calls.deleted).toEqual([await hashSessionToken('token')])
+})
+
+test('records consent to the current terms version', async () => {
+  vi.useFakeTimers({ now: 5000 })
+  const { users, calls } = fakeUsers({ ...existing, termsVersion: 'old' })
+
+  const result = await createAuthService({ verifier: verifier(), users }).consent({
+    userId: 'u1',
+    termsVersion: TERMS_VERSION,
+  })
+
+  expect(result).toEqual({
+    user: { id: 'u1', name: 'はなこ', email: 'a@example.com' },
+    consentRequired: false,
+  })
+  expect(calls.consents).toEqual([{ userId: 'u1', termsVersion: TERMS_VERSION, agreedAt: 5000 }])
+})
+
+test('refuses consent to a version that is no longer current', async () => {
+  const { users, calls } = fakeUsers({ ...existing, termsVersion: 'old' })
+
+  await expect(
+    createAuthService({ verifier: verifier(), users }).consent({
+      userId: 'u1',
+      termsVersion: 'old',
+    }),
+  ).rejects.toMatchObject({ code: 'invalid_state' })
+  expect(calls.consents).toEqual([])
 })

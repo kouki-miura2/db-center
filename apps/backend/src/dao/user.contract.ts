@@ -88,6 +88,24 @@ export const userDaoContract = (
     expect(await countSessions()).toBe(1)
   })
 
+  test('records consent to a new terms version', async () => {
+    const { dao } = await setup()
+    await dao.register(user(), session('s1'))
+
+    const updated = await dao.recordConsent({ userId: 'u1', termsVersion: 'v2', agreedAt: 3000 })
+
+    expect(updated).toMatchObject({ termsVersion: 'v2', agreedAt: 3000 })
+    expect(await dao.findByGoogleSub('sub-1')).toMatchObject({ termsVersion: 'v2' })
+  })
+
+  test('records no consent for a user who is gone', async () => {
+    const { dao } = await setup()
+
+    await expect(
+      dao.recordConsent({ userId: 'missing', termsVersion: 'v2', agreedAt: 3000 }),
+    ).rejects.toMatchObject({ code: 'stale_update' })
+  })
+
   test('creates no session when the user is gone', async () => {
     const { dao, countSessions } = await setup()
 

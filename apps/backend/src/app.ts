@@ -37,6 +37,12 @@ export const SESSION_COOKIE = {
  */
 export const PUBLIC_PATHS = ['/api/auth/google', '/api/auth/register', '/api/auth/logout']
 
+/**
+ * Paths a signed-in user can still use before agreeing to the current terms: their own account
+ * (including withdrawal, `DELETE /api/auth/me`), the consent itself, and signing out.
+ */
+const CONSENT_EXEMPT_PATHS = ['/api/auth/me', '/api/auth/consent', '/api/auth/logout']
+
 export interface AppDependencies {
   sampleService: SampleService
   authService: AuthService
@@ -134,6 +140,19 @@ export const createApp = (deps: AppDependencies) => {
         }
         await next()
       })
+      // A user who agreed to an older terms version can't use the app until they agree again
+      // ("総論 > 共通ルール > 同意").
+      .use('*', async (c, next) => {
+        const user = c.get('user')
+        if (
+          user &&
+          user.termsVersion !== TERMS_VERSION &&
+          !CONSENT_EXEMPT_PATHS.includes(c.req.path)
+        ) {
+          throw new AppError('consent_required')
+        }
+        await next()
+      })
       // Sign in with a Google ID token. A registered user gets a session cookie; an unregistered
       // one only learns that consent is needed, and nothing is stored until `/auth/register`.
       .post('/auth/google', validate('json', z.strictObject({ idToken })), async (c) => {
@@ -175,6 +194,19 @@ export const createApp = (deps: AppDependencies) => {
           consentRequired: user.termsVersion !== TERMS_VERSION,
         })
       })
+      // Agreement to the current terms by a user whose agreed version is older.
+      .post(
+        '/auth/consent',
+        validate(
+          'json',
+          z.strictObject({ termsVersion: z.string().max(100), agreed: z.literal(true) }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          const { termsVersion } = c.req.valid('json')
+          return c.json(await deps.authService.consent({ userId: user.id, termsVersion }))
+        },
+      )
       // Ends this browser's session and clears the cookie, even if the session already expired.
       .post('/auth/logout', async (c) => {
         const token = getCookie(c, deps.sessionCookie.name)

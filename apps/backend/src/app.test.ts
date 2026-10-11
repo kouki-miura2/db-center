@@ -1,3 +1,4 @@
+import { TERMS_VERSION } from 'utils'
 import { expect, test, vi } from 'vite-plus/test'
 
 import { createApp, SESSION_COOKIE } from './app.ts'
@@ -13,7 +14,7 @@ const allowAllGuard: AuthGuard = {
     id: 'test-user',
     name: 'テスト',
     email: 'test@example.com',
-    termsVersion: 'v1',
+    termsVersion: TERMS_VERSION,
     sessionId: 's1',
   }),
 }
@@ -27,6 +28,9 @@ const unusedAuthService: AuthService = {
     throw new Error('unused')
   },
   signOut: async () => {
+    throw new Error('unused')
+  },
+  consent: async () => {
     throw new Error('unused')
   },
 }

@@ -240,3 +240,70 @@ test('logging out only ends this session', async () => {
 test('logging out without a session still succeeds', async () => {
   expect((await logout()).status).toBe(204)
 })
+
+// A registered user whose agreed terms version is outdated, with a session cookie.
+const outdatedUser = async () => {
+  const token = sessionToken(await register())
+  memoryTable<{ termsVersion: string }>(db, 'users').forEach((user) => {
+    user.termsVersion = 'old'
+  })
+  return token as string
+}
+
+const withSession = (token: string, init: { method?: string; body?: string } = {}) => ({
+  ...init,
+  headers: {
+    cookie: `__Host-session=${token}`,
+    'sec-fetch-site': 'same-origin',
+    'content-type': 'application/json',
+  },
+})
+
+test('a user on an older terms version is refused everything but their account and consent', async () => {
+  const token = await outdatedUser()
+
+  // Any other path, even one that doesn't exist, is refused before it is reached.
+  const refused = await app.request('/api/products', withSession(token))
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toMatchObject({ error: { code: 'consent_required' } })
+
+  expect(await (await me(token)).json()).toMatchObject({ consentRequired: true })
+})
+
+test('agreeing to the current terms lets the user in again', async () => {
+  const token = await outdatedUser()
+
+  const res = await app.request(
+    '/api/auth/consent',
+    withSession(token, {
+      method: 'POST',
+      body: JSON.stringify({ termsVersion: TERMS_VERSION, agreed: true }),
+    }),
+  )
+
+  expect(await res.json()).toMatchObject({ consentRequired: false })
+  expect(await (await me(token)).json()).toMatchObject({ consentRequired: false })
+  // Past the consent check now: an unknown path is a plain 404.
+  expect((await app.request('/api/products', withSession(token))).status).toBe(404)
+})
+
+test.each([
+  ['without agreeing', { termsVersion: TERMS_VERSION, agreed: false }, 400],
+  ['to an outdated version', { termsVersion: 'old', agreed: true }, 409],
+])('refuses consent %s', async (_, body, status) => {
+  const token = await outdatedUser()
+
+  const res = await app.request(
+    '/api/auth/consent',
+    withSession(token, { method: 'POST', body: JSON.stringify(body) }),
+  )
+
+  expect(res.status).toBe(status)
+  expect(await (await me(token)).json()).toMatchObject({ consentRequired: true })
+})
+
+test('a user on an older terms version can still log out', async () => {
+  const token = await outdatedUser()
+
+  expect((await logout(token)).status).toBe(204)
+})
