@@ -12,6 +12,15 @@
     // Without this, the SPA fallback would answer unknown `/api/*` paths with index.html.
     "run_worker_first": ["/api/*"],
   },
+  // No `database_id`: local development needs none, and `wrangler deploy` provisions the
+  // database on first deploy and keeps it bound afterwards, so no account ID is tracked here.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "db-center",
+      "migrations_dir": "migrations",
+    },
+  ],
   "observability": {
     "enabled": true,
   },
