@@ -12,7 +12,7 @@ import {
   type ViewDefinition,
 } from './definition.ts'
 export interface DesignIssue {
-  objectKey: string
+  objectKey: string | null
   path: string
   code: string
   severity: 'error' | 'warning'

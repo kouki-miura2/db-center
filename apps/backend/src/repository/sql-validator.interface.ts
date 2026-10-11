@@ -6,6 +6,8 @@ export interface ViewAnalysis {
   dependencies: string[]
 }
 export interface SqlValidator {
+  /** Parse generated statements; SQLite also applies them to an isolated empty database. */
+  validateDdl: (target: Target, statements: string[]) => Promise<void>
   validateView: (
     target: Target,
     sql: string,

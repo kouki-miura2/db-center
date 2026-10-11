@@ -3,6 +3,7 @@ import type { ObjectRepository } from '../repository/object.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SqlValidator } from '../repository/sql-validator.interface.ts'
 import { generatePostgresDdl } from './ddl-postgres.ts'
+import { generateSqliteDdl } from './ddl-sqlite.ts'
 import type { DdlOptions } from './ddl.ts'
 import { assertAllowed } from './permission.ts'
 import { requireMembership } from './product.service.ts'
@@ -33,11 +34,9 @@ export const createScriptService = (deps: {
     }) => {
       const scope = await design(userId, versionId)
       if (scope.context.version.status === 'editing') throw new AppError('invalid_state')
-      if (scope.context.target !== 'postgresql18')
-        throw new AppError('invalid_input', {
-          fields: { target: 'このターゲットのDDL生成は未対応です' },
-        })
-      const result = await generatePostgresDdl(scope.context, scope.objects, deps.sql, options)
+      const result = await (
+        scope.context.target === 'postgresql18' ? generatePostgresDdl : generateSqliteDdl
+      )(scope.context, scope.objects, deps.sql, options)
       const base = scope.context.databaseName.replace(/[^\p{L}\p{N}_-]/gu, '_')
       return {
         ...result,

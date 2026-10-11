@@ -6,6 +6,9 @@ import type { DesignObject, ObjectRepository } from '../repository/object.reposi
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SqlValidator } from '../repository/sql-validator.interface.ts'
 import type { VersionRepository } from '../repository/version.repository.ts'
+import { generatePostgresDdl } from './ddl-postgres.ts'
+import { generateSqliteDdl } from './ddl-sqlite.ts'
+import { ddlOptionsSchema } from './ddl.ts'
 import { validateDesign } from './design-validation.ts'
 import { allowedRoles, assertAllowed, type Operation } from './permission.ts'
 import { requireMembership } from './product.service.ts'
@@ -57,6 +60,26 @@ export const createVersionService = (deps: {
     const scope = await deps.objects.findScope(versionId)
     if (!scope) throw new AppError('not_found')
     const checked = await validateDesign(scope.context, scope.objects, deps.sql)
+    if (!checked.errors) {
+      try {
+        await (scope.context.target === 'postgresql18' ? generatePostgresDdl : generateSqliteDdl)(
+          scope.context,
+          scope.objects,
+          deps.sql,
+          ddlOptionsSchema.parse({}),
+        )
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error
+        checked.issues.push({
+          objectKey: null,
+          path: 'ddl',
+          code: 'invalid_ddl',
+          severity: 'error',
+          message: error.message,
+        })
+        checked.errors++
+      }
+    }
     const database = await deps.databases.findScope(context.productId, context.version.databaseId)
     const previous = database?.versions
       .filter((v) => v.status === 'final' && v.number < context.version.number)

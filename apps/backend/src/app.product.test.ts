@@ -102,6 +102,7 @@ beforeEach(() => {
         validateView: async () => ({ columns: [], dependencies: [] }),
         validateExpression: async () => {},
         validateDataType: async () => {},
+        validateDdl: async () => {},
       },
     }),
     versionService: createVersionService({
@@ -113,6 +114,7 @@ beforeEach(() => {
         validateView: async () => ({ columns: [], dependencies: [] }),
         validateExpression: async () => {},
         validateDataType: async () => {},
+        validateDdl: async () => {},
       },
     }),
     revisionService: createRevisionService({
@@ -1080,35 +1082,48 @@ test('object routes isolate products, lock each object and return deletion delta
   ).toBe('unchanged')
 })
 
-test('DDL export is read-only, validates options and restricts access to frozen designs', async () => {
-  const { body } = await createProduct('u1', 'ddl-product')
-  const productId = body.product.id
-  addMember(productId, 'u2', 'member')
-  const database = (
-    await (
-      await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
-    ).json()
-  ).database
-  const id = database.latestVersion.id,
-    path = `/api/versions/${id}`
-  expect((await app.request(`${path}/ddl`, as('u1', 'POST', {}))).status).toBe(409)
-  expect((await app.request(`${path}/ddl`, as('u3', 'POST', {}))).status).toBe(404)
-  const current = (await (await app.request(path, as('u1'))).json()).data.version
-  await app.request(
-    `${path}/provisional`,
-    as('u1', 'POST', { expectedUpdatedAt: current.updatedAt, expectedRevision: current.revision }),
-  )
-  const before = await (await app.request(path, as('u1'))).json()
-  expect(
-    (await app.request(`${path}/ddl`, as('u2', 'POST', { options: { unknown: true } }))).status,
-  ).toBe(400)
-  const response = await app.request(`${path}/ddl`, as('u2', 'POST', {}))
-  expect(response.status).toBe(200)
-  const exported = await response.json()
-  expect(exported.fileName).toBe('main_v1_build.sql')
-  expect(exported.sql).toContain('CREATE SCHEMA IF NOT EXISTS "public"')
-  expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
-})
+test.each(['postgresql18', 'sqlite3'] as const)(
+  '%s DDL export is read-only, validates options and restricts access to frozen designs',
+  async (target) => {
+    const { body } = await createProduct('u1', 'ddl-product', target)
+    const productId = body.product.id
+    addMember(productId, 'u2', 'member')
+    const database = (
+      await (
+        await app.request(
+          `/api/products/${productId}/databases`,
+          as('u1', 'POST', { name: 'main' }),
+        )
+      ).json()
+    ).database
+    const id = database.latestVersion.id,
+      path = `/api/versions/${id}`
+    expect((await app.request(`${path}/ddl`, as('u1', 'POST', {}))).status).toBe(409)
+    expect((await app.request(`${path}/ddl`, as('u3', 'POST', {}))).status).toBe(404)
+    const current = (await (await app.request(path, as('u1'))).json()).data.version
+    await app.request(
+      `${path}/provisional`,
+      as('u1', 'POST', {
+        expectedUpdatedAt: current.updatedAt,
+        expectedRevision: current.revision,
+      }),
+    )
+    const before = await (await app.request(path, as('u1'))).json()
+    expect(
+      (await app.request(`${path}/ddl`, as('u2', 'POST', { options: { unknown: true } }))).status,
+    ).toBe(400)
+    const response = await app.request(`${path}/ddl`, as('u2', 'POST', {}))
+    expect(response.status).toBe(200)
+    const exported = await response.json()
+    expect(exported.fileName).toBe('main_v1_build.sql')
+    expect(exported.sql).toContain(
+      target === 'postgresql18'
+        ? 'CREATE SCHEMA IF NOT EXISTS "public"'
+        : 'PRAGMA foreign_keys = ON',
+    )
+    expect((await (await app.request(path, as('u1'))).json()).revision).toBe(before.revision)
+  },
+)
 
 test('database cloning accepts only an accessible final source and preserves design keys', async () => {
   const { body } = await createProduct('u1', 'clone-product')

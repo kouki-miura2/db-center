@@ -229,5 +229,10 @@ export const generatePostgresDdl = async (
   if (options.versionTable)
     for (const statement of postgresVersionTable(context))
       add(null, statement, !steps.some((v) => !v.transactional))
-  return scriptResult(context, steps, options.transaction)
+  const result = scriptResult(context, steps, options.transaction)
+  await sql.validateDdl(
+    'postgresql18',
+    result.steps.map((v) => v.sql),
+  )
+  return result
 }

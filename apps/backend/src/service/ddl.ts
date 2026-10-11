@@ -21,6 +21,7 @@ export interface SqlStep {
   objectKey: string | null
   sql: string
   transactional: boolean
+  beforeTransaction?: boolean
 }
 export const invalidDdl = (message: string): never => {
   throw new AppError('invalid_input', { message })
@@ -40,6 +41,7 @@ export const qualifiedIdentifier = (value: string) => {
 }
 /** Remove only a statement terminator outside quoted SQL and comments. */
 export const selectSql = (sql: string) => {
+  let terminated = false
   let result = '',
     i = 0
   while (i < sql.length) {
@@ -65,12 +67,14 @@ export const selectSql = (sql: string) => {
       result += sql.slice(i, end)
       i = end
     } else if (dollar) {
+      if (terminated) invalidDdl('SELECT 一文だけを指定してください')
       const end = sql.indexOf(dollar, i + dollar.length)
       const stop = end < 0 ? sql.length : end + dollar.length
       result += sql.slice(i, stop)
       i = stop
-    } else if (sql[i] === "'" || sql[i] === '"') {
-      const quote = sql[i],
+    } else if (sql[i] === "'" || sql[i] === '"' || sql[i] === '`' || sql[i] === '[') {
+      if (terminated) invalidDdl('SELECT 一文だけを指定してください')
+      const quote = sql[i] === '[' ? ']' : sql[i],
         escaped = quote === "'" && /[eE]/.test(sql[i - 1] ?? '') && !/[\w]/.test(sql[i - 2] ?? '')
       let end = i + 1
       while (end < sql.length) {
@@ -81,7 +85,9 @@ export const selectSql = (sql: string) => {
       result += sql.slice(i, end)
       i = end
     } else {
+      if (terminated && !/\s/.test(sql[i]!)) invalidDdl('SELECT 一文だけを指定してください')
       if (sql[i] !== ';') result += sql[i]
+      else terminated = true
       i++
     }
   }
@@ -119,6 +125,19 @@ export const normalizedDesign = async (
       if (!parsed.success) return invalidDdl(`${v.name}: 設計の形式が正しくありません`)
       return { ...v, ...parsed.data }
     })
+  if (
+    context.target === 'sqlite3' &&
+    normalized.some((v) => !['table', 'view'].includes(v.kind) || v.schemaKey !== null)
+  )
+    invalidDdl('SQLite に未対応のオブジェクトがあります')
+  for (const object of normalized)
+    if (object.kind === 'table')
+      for (const column of object.definition.columns) {
+        if (column.generation && column.defaultValue !== null)
+          invalidDdl('生成列に DEFAULT は指定できません')
+        if (context.target === 'sqlite3' && /^sqlite_/i.test(object.name))
+          invalidDdl('sqlite_ で始まる名前は予約されています')
+      }
   const result = await validateDesign(context, normalized, sql)
   if (result.errors)
     throw new AppError('invalid_input', {
@@ -191,8 +210,9 @@ export const scriptResult = (
   transaction: boolean,
   warnings: string[] = [],
 ) => {
-  const inside = steps.filter((v) => v.transactional),
-    outside = steps.filter((v) => !v.transactional)
+  const before = steps.filter((v) => v.beforeTransaction)
+  const inside = steps.filter((v) => v.transactional && !v.beforeTransaction),
+    outside = steps.filter((v) => !v.transactional && !v.beforeTransaction)
   const header =
     `-- ${context.databaseName} v${context.version.number} ${context.version.status} ${context.target}`.replace(
       /[\r\n]/g,
@@ -200,10 +220,15 @@ export const scriptResult = (
     )
   const statements = [
     header,
+    ...before.map((v) => v.sql),
     ...(transaction && inside.length ? ['BEGIN;'] : []),
     ...inside.map((v) => v.sql),
     ...(transaction && inside.length ? ['COMMIT;'] : []),
     ...outside.map((v) => v.sql),
   ]
-  return { sql: statements.join('\n\n') + '\n', steps: [...inside, ...outside], warnings }
+  return {
+    sql: statements.join('\n\n') + '\n',
+    steps: [...before, ...inside, ...outside],
+    warnings,
+  }
 }

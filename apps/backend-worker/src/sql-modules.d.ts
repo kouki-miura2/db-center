@@ -20,8 +20,13 @@ declare module 'libpg-query/wasm/libpg-query.js' {
 }
 declare module 'sql.js/dist/sql-wasm.js' {
   export interface SqlDatabase {
+    exec: (sql: string) => { columns: string[]; values: (string | number | null)[][] }[]
     run: (sql: string) => void
-    prepare: (sql: string) => { getColumnNames: () => string[]; free: () => void }
+    prepare: (sql: string) => {
+      getColumnNames: () => string[]
+      getSQL: () => string
+      free: () => void
+    }
     close: () => void
   }
   const init: (options?: {
