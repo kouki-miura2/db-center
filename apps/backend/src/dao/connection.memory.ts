@@ -25,6 +25,14 @@ export const createConnectionMemoryDao = (db: MemoryDb): ConnectionDao => ({
     return product && product.deletedAt === null && row ? { ...row } : null
   },
 
+  listByProduct: async (productId) => {
+    const product = memoryTable<ProductRecord>(db, 'products').get(productId)
+    if (!product || product.deletedAt !== null) return []
+    return ofProduct(db, productId)
+      .toSorted((a, b) => a.sortOrder - b.sortOrder)
+      .map((row) => ({ ...row }))
+  },
+
   create: async ({ connection, maxConnections, userId, allowedRoles, audit }) =>
     atomic(db, () => {
       assertActorRole(db, connection.productId, userId, allowedRoles)

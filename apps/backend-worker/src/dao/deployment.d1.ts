@@ -1,4 +1,5 @@
 import type { DeploymentDao, DeploymentRecord } from 'backend/src/dao/deployment.interface.ts'
+import type { Role } from 'backend/src/dao/product.interface.ts'
 import { AppError } from 'backend/src/error.ts'
 
 import { guard, insertAuditLog, runBatch, staleGuard } from './batch.ts'
@@ -29,10 +30,6 @@ export const toDeploymentRecord = (r: Row): DeploymentRecord => ({
   executedCount: r.executed_count as number,
   revision: r.revision as number,
 })
-export const selectDeployments = (db: D1Database, databaseId: string) =>
-  db
-    .prepare('SELECT * FROM deployments WHERE database_id=? ORDER BY started_at DESC,id DESC')
-    .bind(databaseId)
 export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
   const find = async (sql: string, ...params: unknown[]) => {
     const r = await db
@@ -82,8 +79,30 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
     findById: (id) => find('SELECT * FROM deployments WHERE id=?', id),
     findByKey: (id, key) =>
       find('SELECT * FROM deployments WHERE connection_id=? AND idempotency_key=?', id, key),
-    list: async (id) =>
-      (await selectDeployments(db, id).all<Row>()).results.map(toDeploymentRecord),
+    listByVersion: async (versionId) =>
+      (
+        await db
+          .prepare(
+            'SELECT * FROM deployments WHERE to_version_id=? ORDER BY started_at DESC,id DESC',
+          )
+          .bind(versionId)
+          .all<Row>()
+      ).results.map(toDeploymentRecord),
+    // One query: the deployment, its live parents and the user's membership by primary key.
+    findForMember: async (id, userId) => {
+      const row = await db
+        .prepare(
+          `SELECT x.*, m.role AS member_role FROM deployments x
+          JOIN versions v ON v.id = x.to_version_id
+          JOIN databases d ON d.id = v.database_id AND d.deleted_at IS NULL
+          JOIN products p ON p.id = d.product_id AND p.id = x.product_id AND p.deleted_at IS NULL
+          JOIN product_members m ON m.product_id = p.id AND m.user_id = ?
+          WHERE x.id = ?`,
+        )
+        .bind(userId, id)
+        .first<Row>()
+      return row ? { record: toDeploymentRecord(row), role: row.member_role as Role } : null
+    },
     accept: async ({ record: r, userId, allowedRoles, connectionUpdatedAt, audit }) => {
       await runBatch(db, [
         actorHasRole(db, r.productId, userId, allowedRoles),

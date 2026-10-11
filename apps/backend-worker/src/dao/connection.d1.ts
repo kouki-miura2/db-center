@@ -40,6 +40,16 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
     return row ? toConnectionRecord(row) : null
   },
 
+  listByProduct: async (productId) => {
+    const { results } = await db
+      .prepare(
+        'SELECT connections.* FROM connections JOIN products ON products.id = connections.product_id WHERE connections.product_id = ? AND products.deleted_at IS NULL ORDER BY connections.sort_order',
+      )
+      .bind(productId)
+      .all<ConnectionRow>()
+    return results.map(toConnectionRecord)
+  },
+
   create: async ({ connection, maxConnections, userId, allowedRoles, audit }) => {
     const results = await runBatch(db, [
       actorHasRole(db, connection.productId, userId, allowedRoles),

@@ -32,6 +32,7 @@ export const deploymentDaoContract = (
     audits: () => Promise<number>
     revision: () => Promise<number>
     changeVersion: () => Promise<void>
+    markDatabaseDeleted: () => Promise<void>
   }>,
 ) => {
   const accept = (dao: DeploymentDao, record: DeploymentRecord) =>
@@ -61,7 +62,7 @@ export const deploymentDaoContract = (
     expect(results.filter((v) => v.status === 'fulfilled')).toHaveLength(1)
     expect(await f.audits()).toBe(1)
     expect(await f.revision()).toBe(revision + 1)
-    const history = await f.dao.list('d1')
+    const history = await f.dao.listByVersion('v1')
     expect(history).toHaveLength(1)
     expect((await f.dao.findByKey('c1', history[0]!.idempotencyKey))!.id).toBe(history[0]!.id)
   })
@@ -70,7 +71,7 @@ export const deploymentDaoContract = (
       revision = await f.revision()
     await f.changeVersion()
     await expect(accept(f.dao, deploymentRecord())).rejects.toMatchObject({ code: 'stale_update' })
-    expect(await f.dao.list('d1')).toHaveLength(0)
+    expect(await f.dao.listByVersion('v1')).toHaveLength(0)
     expect(await f.audits()).toBe(0)
     expect(await f.revision()).toBe(revision)
   })
@@ -90,6 +91,31 @@ export const deploymentDaoContract = (
     await f.dao.finish(r.id, 'succeeded', '[]', 3000)
     expect(await f.dao.findById(r.id)).toMatchObject({ status: 'failed', finishedAt: 2000 })
     expect(await f.audits()).toBe(2)
+  })
+  test('finds a deployment for a member only, while its parents are live', async () => {
+    const f = await setup(),
+      r = deploymentRecord()
+    await accept(f.dao, r)
+
+    expect(await f.dao.findForMember(r.id, 'u1')).toMatchObject({
+      record: { id: r.id },
+      role: 'owner',
+    })
+    expect(await f.dao.findForMember(r.id, 'u9')).toBeNull()
+    expect(await f.dao.findForMember('missing', 'u1')).toBeNull()
+    await f.markDatabaseDeleted()
+    expect(await f.dao.findForMember(r.id, 'u1')).toBeNull()
+  })
+  test('lists a version’s deployments newest first', async () => {
+    const f = await setup(),
+      first = { ...deploymentRecord(), startedAt: 1000 },
+      second = { ...deploymentRecord(), startedAt: 2000 }
+    await accept(f.dao, first)
+    await f.dao.finish(first.id, 'succeeded', '{}', 1500)
+    await accept(f.dao, second)
+
+    expect((await f.dao.listByVersion('v1')).map((v) => v.id)).toEqual([second.id, first.id])
+    expect(await f.dao.listByVersion('other')).toEqual([])
   })
   test('lists running deployments and abandons one only as it was read', async () => {
     const f = await setup(),

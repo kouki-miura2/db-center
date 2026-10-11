@@ -3,7 +3,13 @@ import type { ConnectionRecord } from './connection.interface.ts'
 import type { DatabaseRecord, VersionRecord } from './database.interface.ts'
 import type { DeploymentDao, DeploymentRecord } from './deployment.interface.ts'
 import { atomic, memoryTable, appendAuditLog, type MemoryDb } from './memory-db.ts'
-import { assertActorRole, bumpProductRevision } from './product.memory.ts'
+import { memoryVersionContext } from './object.memory.ts'
+import {
+  assertActorRole,
+  bumpProductRevision,
+  memberKey,
+  type MemberRow,
+} from './product.memory.ts'
 
 export const memoryDeployments = (db: MemoryDb, databaseId: string) =>
   [...memoryTable<DeploymentRecord>(db, 'deployments').values()]
@@ -33,7 +39,21 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
       const r = [...rows().values()].find((v) => v.connectionId === id && v.idempotencyKey === key)
       return r ? { ...r } : null
     },
-    list: async (id) => memoryDeployments(db, id),
+    listByVersion: async (versionId) =>
+      [...rows().values()]
+        .filter((r) => r.toVersionId === versionId)
+        .toSorted((a, b) => b.startedAt - a.startedAt || b.id.localeCompare(a.id))
+        .map((r) => ({ ...r })),
+    findForMember: async (id, userId) => {
+      const r = rows().get(id)
+      const context = r ? memoryVersionContext(db, r.toVersionId) : null
+      const member = r
+        ? memoryTable<MemberRow>(db, 'product_members').get(memberKey(r.productId, userId))
+        : undefined
+      return r && context && context.productId === r.productId && member
+        ? { record: { ...r }, role: member.role }
+        : null
+    },
     accept: async ({ record: r, userId, allowedRoles, connectionUpdatedAt, audit }) =>
       atomic(db, () => {
         assertActorRole(db, r.productId, userId, allowedRoles)

@@ -40,6 +40,9 @@ const setup = async () => {
       (await db
         .prepare("SELECT revision FROM databases WHERE id='d1'")
         .first<{ revision: number }>())!.revision,
+    markDatabaseDeleted: async () => {
+      await db.prepare("UPDATE databases SET deleted_at=5000 WHERE id='d1'").run()
+    },
     changeVersion: async () => {
       await db.prepare("UPDATE versions SET revision=2 WHERE id='v1'").run()
     },

@@ -33,7 +33,16 @@ export interface DeploymentRecord {
 export interface DeploymentDao {
   findById: (id: string) => Promise<DeploymentRecord | null>
   findByKey: (connectionId: string, key: string) => Promise<DeploymentRecord | null>
-  list: (databaseId: string) => Promise<DeploymentRecord[]>
+  /** A version's deployments, newest first. */
+  listByVersion: (versionId: string) => Promise<DeploymentRecord[]>
+  /**
+   * A deployment and the role of `userId` in its product, read together, or null unless its
+   * version, database and product exist and aren't deleted and the user is a member.
+   */
+  findForMember: (
+    id: string,
+    userId: string,
+  ) => Promise<{ record: DeploymentRecord; role: Role } | null>
   accept: (input: {
     record: DeploymentRecord
     userId: string

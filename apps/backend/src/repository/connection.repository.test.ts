@@ -16,6 +16,7 @@ const record = (passwordEncrypted: string | null): ConnectionRecord => ({
 
 const fakeDao = (passwordEncrypted: string | null): ConnectionDao => ({
   findById: async () => record(passwordEncrypted),
+  listByProduct: async () => [record(passwordEncrypted)],
   create: async () => ({ connection: record(passwordEncrypted), productRevision: 2 }),
   update: async () => ({ connection: record(passwordEncrypted), productRevision: 3 }),
   delete: async () => ({ productRevision: 4 }),

@@ -178,6 +178,20 @@ export const connectionDaoContract = (setup: () => Promise<ConnectionDaoFixture>
     expect(await f.dao.findById('p1', 'c1')).toBeNull()
   })
 
+  test('lists a product’s connections in display order, none for a deleted product', async () => {
+    const f = await arrange()
+    await create(f, 'c1')
+    await create(f, 'c2')
+
+    expect((await f.dao.listByProduct('p1')).map((c) => [c.id, c.sortOrder])).toEqual([
+      ['c1', 1],
+      ['c2', 2],
+    ])
+    expect(await f.dao.listByProduct('other')).toEqual([])
+    await f.markDeleted('p1')
+    expect(await f.dao.listByProduct('p1')).toEqual([])
+  })
+
   test('reorders exactly the product’s connections at the expected revision', async () => {
     const f = await arrange()
     await create(f, 'c1')

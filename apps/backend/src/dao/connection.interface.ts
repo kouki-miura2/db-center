@@ -26,6 +26,8 @@ interface ConnectionWrite {
 export interface ConnectionDao {
   /** A connection of a product that isn't deleted, or null. */
   findById: (productId: string | null, connectionId: string) => Promise<ConnectionRecord | null>
+  /** Every connection of a product that isn't deleted, in display order (none otherwise). */
+  listByProduct: (productId: string) => Promise<ConnectionRecord[]>
   /** Adds a connection after the others. Throws `limit_exceeded` beyond `maxConnections`. */
   create: (
     input: ConnectionWrite & {

@@ -152,11 +152,10 @@ export const createDeploymentService = (deps: {
   }
   return {
     script: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
-      const record = await deps.deployments.findById(deploymentId)
-      if (!record || !(await deps.objects.findContext(record.toVersionId)))
-        throw new AppError('not_found')
-      const member = await requireMembership(deps.products, record.productId, userId)
-      assertAllowed(member.role, 'exportScripts')
+      const found = await deps.deployments.findForMember(deploymentId, userId)
+      if (!found) throw new AppError('not_found')
+      const { record, role } = found
+      assertAllowed(role, 'exportScripts')
       const sql = await deps.storage?.get(`deployments/${record.id}.sql`)
       if (sql === undefined)
         throw new AppError('invalid_state', { message: '実行SQLの保存先が設定されていません' })
@@ -169,13 +168,16 @@ export const createDeploymentService = (deps: {
       const member = await requireMembership(deps.products, scope.context.productId, userId)
       assertAllowed(member.role, 'finalizeVersion')
       if (scope.context.version.status !== 'provisional') throw new AppError('invalid_state')
-      const product = await deps.products.findScope(scope.context.productId)
-      if (!product) throw new AppError('not_found')
+      // Connections with their credentials in one read; the user is authorized for all of them.
+      const credentials =
+        member.product.target === 'postgresql18'
+          ? await deps.connections.listCredentials(scope.context.productId)
+          : []
       const hash = await designHash(await normalizedDesign(scope.context, scope.objects, deps.sql))
       const connections = []
-      for (const connection of product.connections) {
+      for (const connection of credentials) {
         try {
-          const inspection = await deps.inspection.inspect({ userId, connectionId: connection.id })
+          const inspection = await deps.inspection.inspectConnection(connection)
           const matches = matchesAppliedDesign(inspection.applied, {
             databaseId: scope.context.version.databaseId,
             versionId,
@@ -209,17 +211,14 @@ export const createDeploymentService = (deps: {
           })
         }
       }
-      const history = (await deps.deployments.list(scope.context.version.databaseId))
-        .filter((v) => v.toVersionId === versionId)
-        .map(deploymentView)
+      const history = (await deps.deployments.listByVersion(versionId)).map(deploymentView)
       return { version: scope.context.version, connections, history }
     },
+    // Polled while a deployment runs: one query (the row, its live parents, the membership).
     get: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
-      const record = await deps.deployments.findById(deploymentId)
-      if (!record || !(await deps.objects.findContext(record.toVersionId)))
-        throw new AppError('not_found')
-      await requireMembership(deps.products, record.productId, userId)
-      return deploymentView(record)
+      const found = await deps.deployments.findForMember(deploymentId, userId)
+      if (!found) throw new AppError('not_found')
+      return deploymentView(found.record)
     },
     preview: async (input: DeploymentInput) => {
       const connection = await authorize(input.userId, input.connectionId)

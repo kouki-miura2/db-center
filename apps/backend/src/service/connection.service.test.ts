@@ -32,6 +32,7 @@ const connection: Connection = {
 
 const fakeConnections = (overrides: Partial<ConnectionRepository> = {}): ConnectionRepository => ({
   findCredentials: async () => null,
+  listCredentials: async () => [],
   findById: async () => connection,
   create: async () => ({ connection, productRevision: 4 }),
   update: async () => ({ connection, productRevision: 4 }),

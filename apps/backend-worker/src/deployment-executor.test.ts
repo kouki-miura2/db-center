@@ -237,7 +237,10 @@ const migrationFixture = async () => {
       findMembership: async () => ({ role: 'owner', product: { target: 'postgresql18' } }),
       findScope: async () => ({ connections: [f.conn] }),
     } as unknown as ProductRepository,
-    connections: { findCredentials: async () => f.conn } as unknown as ConnectionRepository,
+    connections: {
+      findCredentials: async () => f.conn,
+      listCredentials: async () => [f.conn],
+    } as unknown as ConnectionRepository,
     objects: f.objectRepository,
     sql: testSqlValidator,
     deployments: f.repository,
@@ -252,6 +255,10 @@ const migrationFixture = async () => {
     workflow: { start: async () => {}, status: async () => 'active' },
     inspection: {
       inspect: async () => ({
+        ...(await inspectPostgres(session)),
+        catalog: await readPostgresCatalog(session),
+      }),
+      inspectConnection: async () => ({
         ...(await inspectPostgres(session)),
         catalog: await readPostgresCatalog(session),
       }),
@@ -328,7 +335,8 @@ test.each(['mismatch', 'drift', 'data_loss'] as const)(
             : 'data_loss',
       )
       await expect(f.service.accept(f.input)).rejects.toMatchObject({ code: 'invalid_state' })
-      expect(await f.repository.list(f.r.databaseId)).toHaveLength(1)
+      // Refused: nothing was accepted under the request's key.
+      expect(await f.repository.findByKey(f.input.connectionId, f.input.idempotencyKey)).toBeNull()
     } finally {
       await f.pg.close()
     }

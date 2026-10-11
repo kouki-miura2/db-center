@@ -15,6 +15,8 @@ export interface Connection {
 export interface ConnectionRepository {
   /** Internal only. The service must authorize before decrypting or using credentials. */
   findCredentials: (connectionId: string) => Promise<ConnectionRecord | null>
+  /** Internal only, like `findCredentials`: a product's connections in display order. */
+  listCredentials: (productId: string) => Promise<ConnectionRecord[]>
   findById: (productId: string, connectionId: string) => Promise<Connection | null>
   create: (
     input: Parameters<ConnectionDao['create']>[0],
@@ -39,6 +41,7 @@ export const toConnection = (record: ConnectionRecord): Connection => ({
 
 export const createConnectionRepository = (dao: ConnectionDao): ConnectionRepository => ({
   findCredentials: (connectionId) => dao.findById(null, connectionId),
+  listCredentials: (productId) => dao.listByProduct(productId),
   findById: async (productId, connectionId) => {
     const record = await dao.findById(productId, connectionId)
     return record ? toConnection(record) : null

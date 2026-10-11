@@ -28,6 +28,9 @@ deploymentDaoContract(async () => {
     dao: createDeploymentMemoryDao(db),
     audits: async () => memoryTable(db, 'audit_logs').size,
     revision: async () => memoryTable<{ revision: number }>(db, 'databases').get('d1')!.revision,
+    markDatabaseDeleted: async () => {
+      memoryTable<{ deletedAt: number | null }>(db, 'databases').get('d1')!.deletedAt = 5000
+    },
     changeVersion: async () => {
       memoryTable<{ revision: number }>(db, 'versions').get('v1')!.revision++
     },
