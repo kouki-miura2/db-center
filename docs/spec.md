@@ -460,6 +460,8 @@ ITエンジニアが複数プロダクトのデータベース設計を一元管
 - 失敗したとき: トランザクション内の変更は自動でロールバックし、適用済みバージョンは更新しない。トランザクション外の処理（CREATE INDEX CONCURRENTLY など）で失敗した場合は、どこまで実行したかを実行ログに残して「失敗」とし、利用者が接続先を確認して対処する。自動で再実行はしない。
 - 実行の結果（成功・失敗、実行ログ、実行した DDL）は履歴として残し、新しい順に表示する（「データ仕様 > deployments」参照）。
 - データベース接続情報を削除しても実行履歴は残し、実行時の接続名に「（削除済み）」を付けて表示する。
+- プロダクトの参加者は履歴の実行SQLを取得できる。権限のないプロダクトや削除した親の履歴・SQLは取得できない。接続を削除すると関連するデータベーススコープのリビジョンも更新する。
+- 確定前のダイアログでは、接続先の現在の適用記録を取得し、同じ設計の適用済み・別の設計・未適用・接続状態不明を表示する。D1の成功履歴を現在の適用状況とみなさず、接続できないことだけを理由に確定を禁止しない。
 
 ### 履歴
 
@@ -782,26 +784,38 @@ D1 は読み取った行数で課金・制限されるため、読み取り行�
 
 ##### deployments（ビルド・マイグレーションの実行履歴）
 
-| カラム          | 型      | 備考                                                       |
-| --------------- | ------- | ---------------------------------------------------------- |
-| id              | TEXT    | PK                                                         |
-| connection_id   | TEXT    | FK → connections。NULL 可（接続情報を削除したとき）        |
-| connection_name | TEXT    | 実行時の接続名。接続情報を削除しても表示できるよう保持する |
-| kind            | TEXT    | `build` / `migration`                                      |
-| from_version_id | TEXT    | 更新前のバージョン。FK → versions。NULL 可（ビルド）       |
-| to_version_id   | TEXT    | 適用したバージョン。FK → versions                          |
-| status          | TEXT    | `running` / `succeeded` / `failed`                         |
-| log             | TEXT    | 実行ログ（JSON。手順ごとの件数・所要時間・エラー）         |
-| executed_by     | TEXT    | FK → users                                                 |
-| started_at      | INTEGER | 開始日時                                                   |
-| finished_at     | INTEGER | 終了日時。NULL 可                                          |
+| カラム              | 型      | 備考                                                                      |
+| ------------------- | ------- | ------------------------------------------------------------------------- |
+| id                  | TEXT    | PK                                                                        |
+| connection_id       | TEXT    | FK → connections。NULL 可（接続情報を削除したとき）                       |
+| connection_name     | TEXT    | 実行時の接続名。接続情報を削除しても表示できるよう保持する                |
+| kind                | TEXT    | `build` / `migration`                                                     |
+| from_version_id     | TEXT    | 更新前のバージョン。FK → versions。NULL 可（ビルド）                      |
+| to_version_id       | TEXT    | 適用したバージョン。FK → versions                                         |
+| status              | TEXT    | `running` / `succeeded` / `failed`                                        |
+| log                 | TEXT    | 実行ログ（JSON。手順ごとの件数・所要時間・エラー）                        |
+| executed_by         | TEXT    | FK → users                                                                |
+| started_at          | INTEGER | 開始日時                                                                  |
+| finished_at         | INTEGER | 終了日時。NULL 可                                                         |
+| product_id          | TEXT    | 履歴が属するプロダクト。FK → products                                     |
+| database_id         | TEXT    | 履歴が属するデータベース。FK → databases                                  |
+| phase               | TEXT    | 内部進捗。`preparing` / `queued` / `executing` / `finished`               |
+| idempotency_key     | TEXT    | 接続先ごとの冪等キー（UUID）                                              |
+| request_hash        | TEXT    | 再送された要求を照合するSHA-256                                           |
+| plan_hash           | TEXT    | R2に保存した固定計画のSHA-256                                             |
+| connection_snapshot | TEXT    | 受付時の接続設定（JSON）。パスワードは暗号文のまま保存し、APIには返さない |
+| target_revision     | INTEGER | 適用先の設計リビジョン                                                    |
+| source_revision     | INTEGER | 更新前の設計リビジョン。ビルドではNULL                                    |
+| executed_count      | INTEGER | 応答を確認した実行手順の数                                                |
 
 - 接続先データベースの適用済みバージョンは、接続先データベース内のバージョン管理テーブル（`_dbcenter`）を正とする。この表は画面表示用の履歴。
 
 #### Cloudflare R2
 
 - オブジェクトキー: `deployments/<deployment id>.sql`
+- 固定した実行計画は `deployments/<deployment id>.json` に保存する。SQL・実行順序・対象の版とリビジョン・設計ハッシュを含み、接続パスワードは含めない。こちらも上書きしない。
 - ビルド・マイグレーションで実行した DDL スクリプトを保存する。書き込みは実行時の1回だけで、上書きしない。プロダクトを完全削除するときに、あわせて削除する。
+- 親プロダクト・データベースを完全削除するときは、SQLと計画の両方を先に削除する。いずれかの削除に失敗した場合は、再実行で照合できるようD1の履歴を残す。
 - テーブル定義書（PDF・Markdown）と、出力した DDL スクリプト・差分スクリプトは保存しない。定義書のファイルはブラウザで、スクリプトは要求のたびにバージョンから生成する。
 
 #### DBの外で管理するデータ

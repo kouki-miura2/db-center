@@ -3,7 +3,7 @@ import type { DeploymentDao, DeploymentRecord } from '../dao/deployment.interfac
 export const deploymentView = (r: DeploymentRecord) => ({
   id: r.id,
   connectionId: r.connectionId,
-  connectionName: r.connectionName,
+  connectionName: r.connectionId === null ? `${r.connectionName}（削除済み）` : r.connectionName,
   connectionDeleted: r.connectionId === null,
   kind: r.kind,
   fromVersionId: r.fromVersionId,

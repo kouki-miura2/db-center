@@ -151,6 +151,9 @@ test(
       expect((await f.executor.execute(f.r.id)).status).toBe('not_claimed')
       expect(f.queries).toHaveLength(previous)
       expect((await f.repository.findById(f.r.id))!.executedCount).toBeGreaterThan(0)
+      const progress = JSON.parse((await f.repository.findById(f.r.id))!.log!)
+      expect(progress.groups['transaction:table'].statements).toBeGreaterThan(0)
+      expect(progress.groups['transaction:version'].durationMs).toBeGreaterThanOrEqual(0)
     } finally {
       await f.pg.close()
     }
@@ -228,6 +231,7 @@ const migrationFixture = async () => {
   const service = createDeploymentService({
     products: {
       findMembership: async () => ({ role: 'owner', product: { target: 'postgresql18' } }),
+      findScope: async () => ({ connections: [f.conn] }),
     } as unknown as ProductRepository,
     connections: { findCredentials: async () => f.conn } as unknown as ConnectionRepository,
     objects: f.objectRepository,
@@ -385,6 +389,39 @@ test(
           .rows[0]!.version_id,
       ).toBe(f.context.version.id)
       expect((await f.executor.execute(receipt.id)).status).toBe('not_claimed')
+    } finally {
+      await f.pg.close()
+    }
+  },
+)
+
+test(
+  'finalize preview reads the current manager rather than past success history',
+  { timeout: 30_000 },
+  async () => {
+    const f = await migrationFixture()
+    try {
+      f.target.version.status = 'provisional'
+      const before = await f.service.finalizePreview({
+        userId: 'u1',
+        versionId: f.target.version.id,
+      })
+      expect(before.connections[0]!.status).toBe('different')
+      const receipt = await f.service.accept(f.input)
+      expect((await f.executor.execute(receipt.id)).status).toBe('succeeded')
+      const after = await f.service.finalizePreview({
+        userId: 'u1',
+        versionId: f.target.version.id,
+      })
+      expect(after.connections[0]).toMatchObject({
+        status: 'applied',
+        applied: { versionId: f.target.version.id, revision: f.target.version.revision },
+      })
+      f.target.version.revision++
+      expect(
+        (await f.service.finalizePreview({ userId: 'u1', versionId: f.target.version.id }))
+          .connections[0]!.status,
+      ).toBe('different')
     } finally {
       await f.pg.close()
     }

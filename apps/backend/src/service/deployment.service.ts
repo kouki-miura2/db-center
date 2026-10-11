@@ -22,7 +22,7 @@ import {
 } from './ddl.ts'
 import { deploymentChecks } from './deployment-checks.ts'
 import { canonical, diffDesigns } from './design-diff.ts'
-import { designHash, hashText } from './drift.ts'
+import { designHash, hashText, matchesAppliedDesign } from './drift.ts'
 import type { InspectionService } from './inspection.service.ts'
 import { generatePostgresMigration } from './migration-postgres.ts'
 import { migrationOptionsSchema } from './migration.ts'
@@ -151,6 +151,69 @@ export const createDeploymentService = (deps: {
     return { plan, inspection, reasons, checks }
   }
   return {
+    script: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
+      const record = await deps.deployments.findById(deploymentId)
+      if (!record || !(await deps.objects.findContext(record.toVersionId)))
+        throw new AppError('not_found')
+      const member = await requireMembership(deps.products, record.productId, userId)
+      assertAllowed(member.role, 'exportScripts')
+      const sql = await deps.storage?.get(`deployments/${record.id}.sql`)
+      if (sql === undefined)
+        throw new AppError('invalid_state', { message: '実行SQLの保存先が設定されていません' })
+      if (sql === null) throw new AppError('not_found')
+      return { deploymentId: record.id, sql, fileName: `deployment_${record.id}.sql` }
+    },
+    finalizePreview: async ({ userId, versionId }: { userId: string; versionId: string }) => {
+      const scope = await deps.objects.findScope(versionId)
+      if (!scope) throw new AppError('not_found')
+      const member = await requireMembership(deps.products, scope.context.productId, userId)
+      assertAllowed(member.role, 'finalizeVersion')
+      if (scope.context.version.status !== 'provisional') throw new AppError('invalid_state')
+      const product = await deps.products.findScope(scope.context.productId)
+      if (!product) throw new AppError('not_found')
+      const hash = await designHash(await normalizedDesign(scope.context, scope.objects, deps.sql))
+      const connections = []
+      for (const connection of product.connections) {
+        try {
+          const inspection = await deps.inspection.inspect({ userId, connectionId: connection.id })
+          const matches = matchesAppliedDesign(inspection.applied, {
+            databaseId: scope.context.version.databaseId,
+            versionId,
+            revision: scope.context.version.revision,
+            designHash: hash,
+          })
+          connections.push({
+            id: connection.id,
+            name: connection.name,
+            status: !inspection.supported
+              ? 'unsupported'
+              : matches
+                ? 'applied'
+                : inspection.applied
+                  ? 'different'
+                  : 'unapplied',
+            applied: inspection.applied
+              ? {
+                  versionId: inspection.applied.versionId,
+                  versionNumber: inspection.applied.versionNumber,
+                  revision: inspection.applied.revision,
+                }
+              : null,
+          })
+        } catch {
+          connections.push({
+            id: connection.id,
+            name: connection.name,
+            status: 'unknown',
+            applied: null,
+          })
+        }
+      }
+      const history = (await deps.deployments.list(scope.context.version.databaseId))
+        .filter((v) => v.toVersionId === versionId)
+        .map(deploymentView)
+      return { version: scope.context.version, connections, history }
+    },
     get: async ({ userId, deploymentId }: { userId: string; deploymentId: string }) => {
       const record = await deps.deployments.findById(deploymentId)
       if (!record || !(await deps.objects.findContext(record.toVersionId)))

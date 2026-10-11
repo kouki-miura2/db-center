@@ -5,6 +5,9 @@ import { createApp, SESSION_COOKIE } from './app.ts'
 import { createAuditLogMemoryDao } from './dao/audit-log.memory.ts'
 import { createConnectionMemoryDao } from './dao/connection.memory.ts'
 import { createDatabaseMemoryDao } from './dao/database.memory.ts'
+import { deploymentRecord } from './dao/deployment.contract.ts'
+import type { DeploymentRecord } from './dao/deployment.interface.ts'
+import { createDeploymentMemoryDao } from './dao/deployment.memory.ts'
 import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
@@ -18,6 +21,7 @@ import { createAuditLogRepository } from './repository/audit-log.repository.ts'
 import type { AuthGuard } from './repository/auth-guard.interface.ts'
 import { createConnectionRepository } from './repository/connection.repository.ts'
 import { createDatabaseRepository } from './repository/database.repository.ts'
+import { createDeploymentRepository } from './repository/deployment.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createMemberRepository } from './repository/member.repository.ts'
 import { createObjectRepository } from './repository/object.repository.ts'
@@ -31,7 +35,7 @@ import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
 import { createDefinitionExportService } from './service/definition-export.service.ts'
 import type { TableDefinition } from './service/definition.ts'
-import type { DeploymentService } from './service/deployment.service.ts'
+import { createDeploymentService } from './service/deployment.service.ts'
 import { createInspectionService } from './service/inspection.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
@@ -46,6 +50,7 @@ import { createVersionService } from './service/version.service.ts'
 
 let db: MemoryDb
 let app: ReturnType<typeof createApp>
+let deploymentSql: Map<string, string>
 
 const headerGuard: AuthGuard = {
   authenticate: async (request) => {
@@ -74,8 +79,32 @@ beforeEach(() => {
   }
   const products = createProductRepository(createProductMemoryDao(db))
   const secrets = createAesGcmSecretBox(btoa('k'.repeat(32)))
+  deploymentSql = new Map()
+  const inspection = createInspectionService({
+    products,
+    connections: createConnectionRepository(createConnectionMemoryDao(db)),
+    secrets,
+    postgres: {
+      open: async () => {
+        throw new AppError('connection_failed')
+      },
+    },
+  })
   app = createApp({
-    deploymentService: {} as DeploymentService,
+    deploymentService: createDeploymentService({
+      products,
+      connections: createConnectionRepository(createConnectionMemoryDao(db)),
+      objects: createObjectRepository(createObjectMemoryDao(db)),
+      deployments: createDeploymentRepository(createDeploymentMemoryDao(db)),
+      inspection,
+      sql: {
+        validateView: async () => ({ columns: [], dependencies: [] }),
+        validateExpression: async () => {},
+        validateDataType: async () => {},
+        validateDdl: async () => {},
+      },
+      storage: { putOnce: async () => {}, get: async (key) => deploymentSql.get(key) ?? null },
+    }),
     inspectionService: createInspectionService({
       products,
       connections: createConnectionRepository(createConnectionMemoryDao(db)),
@@ -1625,3 +1654,155 @@ test.each(['postgresql18', 'sqlite3'] as const)(
     ).toBe(404)
   },
 )
+
+test('deployment SQL and progress require membership and survive connection deletion with a revision change', async () => {
+  const { body } = await createProduct('u1', 'deployment-history'),
+    productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const { database } = await (
+    await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+  ).json()
+  const { connection } = await (
+    await app.request(
+      `/api/products/${productId}/connections`,
+      as('u1', 'POST', {
+        name: 'production',
+        connectionString: 'postgres://user@db.example.com/main',
+        password: 'test-private-value',
+      }),
+    )
+  ).json()
+  const versionId = database.latestVersion.id,
+    path = `/api/versions/${versionId}`
+  const scope = await (await app.request(path, as('u1'))).json()
+  const provisional = await (
+    await app.request(
+      `${path}/provisional`,
+      as('u1', 'POST', {
+        expectedUpdatedAt: scope.data.version.updatedAt,
+        expectedRevision: scope.revision,
+      }),
+    )
+  ).json()
+  const record: DeploymentRecord = {
+    ...deploymentRecord(),
+    productId,
+    databaseId: database.id,
+    connectionId: connection.id,
+    connectionName: connection.name,
+    toVersionId: versionId,
+    status: 'succeeded',
+    phase: 'finished',
+    targetRevision: provisional.revisions.version,
+    connectionSnapshot: 'test-private-value',
+  }
+  memoryTable<DeploymentRecord>(db, 'deployments').set(record.id, record)
+  deploymentSql.set(`deployments/${record.id}.sql`, '-- frozen SQL\nSELECT 1;')
+  const deploymentPath = `/api/deployments/${record.id}`
+  expect((await app.request(deploymentPath, as('u3'))).status).toBe(404)
+  expect((await app.request(`${deploymentPath}/script`, as('u3'))).status).toBe(404)
+  expect((await app.request(`${deploymentPath}/script`, as('u2'))).status).toBe(200)
+  expect(await (await app.request(deploymentPath, as('u2'))).text()).not.toContain(
+    'test-private-value',
+  )
+  const databasePath = `/api/products/${productId}/databases/${database.id}`
+  const before = await (await app.request(databasePath, as('u1'))).json()
+  memoryTable<DeploymentRecord>(db, 'deployments').get(record.id)!.status = 'running'
+  expect(
+    (
+      await app.request(
+        `/api/products/${productId}/connections/${connection.id}`,
+        as('u1', 'DELETE', { expectedUpdatedAt: connection.updatedAt }),
+      )
+    ).status,
+  ).toBe(409)
+  memoryTable<DeploymentRecord>(db, 'deployments').get(record.id)!.status = 'succeeded'
+  expect(
+    (
+      await app.request(
+        `/api/products/${productId}/connections/${connection.id}`,
+        as('u1', 'DELETE', { expectedUpdatedAt: connection.updatedAt }),
+      )
+    ).status,
+  ).toBe(200)
+  const after = await (
+    await app.request(`${databasePath}?revision=${before.revision}`, as('u2'))
+  ).json()
+  expect(after.mode).toBe('full')
+  expect(after.revision).toBe(before.revision + 1)
+  expect(after.data.deployments[0]).toMatchObject({
+    connectionId: null,
+    connectionName: 'production（削除済み）',
+    connectionDeleted: true,
+  })
+  expect((await (await app.request(`${deploymentPath}/script`, as('u2'))).json()).sql).toBe(
+    '-- frozen SQL\nSELECT 1;',
+  )
+  expect(
+    (
+      await app.request(
+        databasePath,
+        as('u1', 'DELETE', {
+          confirmationName: 'main',
+          expectedUpdatedAt: after.data.database.updatedAt,
+        }),
+      )
+    ).status,
+  ).toBe(200)
+  expect((await app.request(deploymentPath, as('u1'))).status).toBe(404)
+  expect((await app.request(`${deploymentPath}/script`, as('u1'))).status).toBe(404)
+})
+
+test('finalize preview reports unavailable live connections and still permits finalization', async () => {
+  const { body } = await createProduct('u1', 'finalize-preview'),
+    productId = body.product.id
+  addMember(productId, 'u2', 'member')
+  const { database } = await (
+    await app.request(`/api/products/${productId}/databases`, as('u1', 'POST', { name: 'main' }))
+  ).json()
+  const { connection } = await (
+    await app.request(
+      `/api/products/${productId}/connections`,
+      as('u1', 'POST', {
+        name: 'production',
+        connectionString: 'postgres://user@db.example.com/main',
+        password: 'test-private-value',
+      }),
+    )
+  ).json()
+  const path = `/api/versions/${database.latestVersion.id}`,
+    scope = await (await app.request(path, as('u1'))).json()
+  const provisional = await (
+    await app.request(
+      `${path}/provisional`,
+      as('u1', 'POST', {
+        expectedUpdatedAt: scope.data.version.updatedAt,
+        expectedRevision: scope.revision,
+      }),
+    )
+  ).json()
+  expect((await app.request(`${path}/finalize-preview`, as('u2', 'POST', {}))).status).toBe(403)
+  expect((await app.request(`${path}/finalize-preview`, as('u3', 'POST', {}))).status).toBe(404)
+  expect(
+    (await app.request(`${path}/finalize-preview`, as('u1', 'POST', { password: 'override' })))
+      .status,
+  ).toBe(400)
+  const preview = await app.request(`${path}/finalize-preview`, as('u1', 'POST', {}))
+  expect(preview.status).toBe(200)
+  const text = await preview.text()
+  expect(text).not.toContain('test-private-value')
+  expect(JSON.parse(text).connections).toEqual([
+    { id: connection.id, name: 'production', status: 'unknown', applied: null },
+  ])
+  expect(
+    (
+      await app.request(
+        `${path}/finalize`,
+        as('u1', 'POST', {
+          expectedUpdatedAt: provisional.version.updatedAt,
+          expectedRevision: provisional.revisions.version,
+        }),
+      )
+    ).status,
+  ).toBe(200)
+})

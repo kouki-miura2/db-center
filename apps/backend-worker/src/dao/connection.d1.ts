@@ -106,6 +106,11 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
       // deployments.connection_id is set to NULL by its foreign key; connection_name stays.
       db
         .prepare(
+          'UPDATE databases SET revision=revision+1 WHERE id IN (SELECT database_id FROM deployments WHERE connection_id=?)',
+        )
+        .bind(connectionId),
+      db
+        .prepare(
           "DELETE FROM connections WHERE id = ? AND product_id = ? AND updated_at = ? AND NOT EXISTS(SELECT 1 FROM deployments WHERE connection_id=connections.id AND status='running')",
         )
         .bind(connectionId, productId, expectedUpdatedAt),
@@ -113,7 +118,7 @@ export const createConnectionD1Dao = (db: D1Database): ConnectionDao => ({
       bumpProductRevision(db, productId),
       insertAuditLog(db, audit),
     ])
-    return { productRevision: revisionAt(results, 3) }
+    return { productRevision: revisionAt(results, 4) }
   },
 
   reorder: async ({ productId, connectionIds, expectedRevision, userId, allowedRoles, audit }) => {

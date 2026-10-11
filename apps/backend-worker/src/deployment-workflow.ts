@@ -17,7 +17,8 @@ export class DeploymentWorkflowEntrypoint extends WorkflowEntrypoint<
   WorkerEnv,
   { deploymentId: string }
 > {
-  run = async (event: WorkflowEvent<{ deploymentId: string }>, step: WorkflowStep) => {
+  // Cloudflare RPC dispatch requires a prototype method; an arrow field is not callable.
+  async run(event: WorkflowEvent<{ deploymentId: string }>, step: WorkflowStep) {
     if (!this.env.DEPLOYMENT_SQL) throw new Error('deployment_storage_not_configured')
     return step.do(
       'execute frozen deployment',

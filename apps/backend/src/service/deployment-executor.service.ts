@@ -37,6 +37,7 @@ export const createDeploymentExecutor = (deps: {
       index: number
       objectKey: string | null
       phase: string
+      kind: string
       status: 'running' | 'succeeded'
     } | null = null
     const log = (code?: string) =>
@@ -96,7 +97,17 @@ export const createDeploymentExecutor = (deps: {
       precheckReasons = checks.reasons
       if (checks.reasons.length) throw new AppError('invalid_state', { message: checks.reasons[0] })
       const execute = async (sql: string, phase: string, objectKey: string | null = null) => {
-        lastStep = { index: count, objectKey, phase, status: 'running' }
+        const kind = sql.includes('"_dbcenter"."version"')
+          ? 'version'
+          : phase === 'constraint'
+            ? 'constraint'
+            : (sql
+                .match(
+                  /^(?:CREATE|ALTER|DROP|COMMENT ON)\s+(?:UNIQUE\s+)?(SCHEMA|SEQUENCE|TABLE|MATERIALIZED VIEW|VIEW|INDEX|COLUMN)\b/i,
+                )?.[1]
+                ?.toLowerCase()
+                .replaceAll(' ', '_') ?? phase)
+        lastStep = { index: count, objectKey, phase, kind, status: 'running' }
         // Persist intent before executing. Lost acknowledgements never permit a replay.
         await deps.deployments.progress(id, count, log())
         const start = Date.now(),
@@ -106,7 +117,11 @@ export const createDeploymentExecutor = (deps: {
           inTransaction = false
           committed = true
         }
-        const group = (groups[phase] ??= { statements: 0, rows: 0, durationMs: 0 })
+        const group = (groups[kind === phase ? phase : `${phase}:${kind}`] ??= {
+          statements: 0,
+          rows: 0,
+          durationMs: 0,
+        })
         group.statements++
         group.rows += result.rowCount
         group.durationMs += Date.now() - start

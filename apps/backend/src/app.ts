@@ -776,6 +776,29 @@ export const createApp = (deps: AppDependencies) => {
           ),
       )
       .get(
+        '/deployments/:deploymentId/script',
+        validate('param', z.strictObject({ deploymentId: z.uuid() })),
+        async (c) =>
+          c.json(
+            await deps.deploymentService.script({
+              ...c.req.valid('param'),
+              userId: requireUser(c).id,
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/finalize-preview',
+        validate('param', z.strictObject({ versionId: z.uuid() })),
+        validate('json', z.strictObject({})),
+        async (c) =>
+          c.json(
+            await deps.deploymentService.finalizePreview({
+              ...c.req.valid('param'),
+              userId: requireUser(c).id,
+            }),
+          ),
+      )
+      .get(
         '/deployments/:deploymentId',
         validate('param', z.strictObject({ deploymentId: z.uuid() })),
         async (c) =>
