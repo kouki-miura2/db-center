@@ -828,6 +828,79 @@ describe('databases', () => {
     expect((await app.request(`${path}?revision=2`, as('u1'))).status).toBe(404)
   })
 
+  describe('common columns', () => {
+    const createdAt = {
+      name: 'created_at',
+      logicalName: '登録日時',
+      dataType: 'timestamptz',
+      notNull: true,
+      defaultValue: 'now()',
+      comment: null,
+      generation: null,
+      collation: null,
+    }
+
+    test('any member saves the set; only the database revision grows', async () => {
+      const productId = await arrange()
+      const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+      const path = `/api/products/${productId}/databases/${database.id}`
+      const productRevision = (await scope(productId)).revision
+
+      const res = await app.request(
+        `${path}/common-columns`,
+        as('u2', 'PUT', { columns: [createdAt], expectedRevision: 1 }),
+      )
+
+      expect(await res.json()).toEqual({
+        commonColumns: [createdAt],
+        revisions: { database: 2 },
+      })
+      const databaseScope = await (await app.request(path, as('u1'))).json()
+      expect(databaseScope).toMatchObject({
+        revision: 2,
+        data: { commonColumns: [createdAt], database: { updatedAt: database.updatedAt } },
+      })
+      expect((await scope(productId)).revision).toBe(productRevision)
+      expect(
+        await (
+          await app.request(`/api/products/${productId}?revision=${productRevision}`, as('u1'))
+        ).json(),
+      ).toEqual({ mode: 'unchanged', revision: productRevision })
+    })
+
+    test('refuses a stale revision, bad columns and outsiders', async () => {
+      const productId = await arrange()
+      const { database } = await (await createDatabase(productId, { name: 'main' })).json()
+      const save = (userId: string, body: unknown) =>
+        app.request(
+          `/api/products/${productId}/databases/${database.id}/common-columns`,
+          as(userId, 'PUT', body),
+        )
+
+      const stale = await save('u1', { columns: [], expectedRevision: 2 })
+      expect(stale.status).toBe(409)
+      expect((await stale.json()).error.code).toBe('stale_update')
+
+      const duplicate = await save('u1', { columns: [createdAt, createdAt], expectedRevision: 1 })
+      expect(duplicate.status).toBe(400)
+      expect((await duplicate.json()).error.fields).toHaveProperty(['columns.1.name'])
+
+      const unknownField = await save('u1', {
+        columns: [{ ...createdAt, extra: true }],
+        expectedRevision: 1,
+      })
+      expect(unknownField.status).toBe(400)
+
+      const tooMany = Array.from({ length: LIMITS.columnsPerTable + 1 }, (_, i) => ({
+        ...createdAt,
+        name: `c${i}`,
+      }))
+      expect((await save('u1', { columns: tooMany, expectedRevision: 1 })).status).toBe(400)
+
+      expect((await save('u3', { columns: [], expectedRevision: 1 })).status).toBe(404)
+    })
+  })
+
   test('a deleted product’s database can’t be reached by its ID', async () => {
     const productId = await arrange()
     const { database } = await (await createDatabase(productId, { name: 'main' })).json()

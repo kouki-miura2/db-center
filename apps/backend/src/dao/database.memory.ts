@@ -165,6 +165,16 @@ export const createDatabaseMemoryDao = (db: MemoryDb): DatabaseDao => ({
       return { database: toRecord(row), productRevision }
     }),
 
+  saveCommonColumns: async (input) =>
+    atomic(db, () => {
+      assertActorRole(db, input.productId, input.userId, input.allowedRoles)
+      const row = inProduct(db, input.productId, input.databaseId)
+      if (!row || row.revision !== input.expectedRevision) throw new AppError('stale_update')
+      row.commonColumns = input.commonColumns
+      row.revision += 1
+      return { revision: row.revision }
+    }),
+
   delete: async ({ productId, databaseId, expectedUpdatedAt, now, userId, allowedRoles, audit }) =>
     atomic(db, () => {
       assertActorRole(db, productId, userId, allowedRoles)

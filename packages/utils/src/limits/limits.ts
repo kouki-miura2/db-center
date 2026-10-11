@@ -49,6 +49,8 @@ export const LIMITS = {
   logicalNameMaxLength: 100,
   /** Max length (characters) of a comment or memo. Checked in both the UI and the API. */
   commentMaxLength: 500,
+  /** Max length (characters) of a data type, an expression (default value, generated column, ...) or a collation in a design, and of a SQLite 3 physical name (which has no length limit of its own). Checked in both the UI and the API. Provisional. */
+  expressionMaxLength: 1000,
   /** Database connections per product. Checked in both the UI and the API on creation. Provisional. */
   connectionsPerProduct: 10,
   /** Databases per product. Checked in both the UI and the API on creation. Provisional. */

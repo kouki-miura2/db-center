@@ -31,6 +31,7 @@ const database: Database = {
 const fakeDatabases = (overrides: Partial<DatabaseRepository> = {}): DatabaseRepository => ({
   findById: async () => database,
   findScope: async () => null,
+  saveCommonColumns: async () => ({ revision: 4 }),
   create: async () => ({ productRevision: 4 }),
   update: async () => ({ database: { ...database, name: 'renamed' }, productRevision: 4 }),
   delete: async () => ({ productRevision: 4 }),
@@ -277,4 +278,60 @@ test('hides the database scope from a non-member, and a deleted database', async
   await expect(
     service('owner', fakeDatabases({ findById: async () => null })).getDatabase(input),
   ).rejects.toMatchObject({ code: 'not_found' })
+})
+
+const createdAt = {
+  name: 'created_at',
+  logicalName: '登録日時',
+  dataType: 'timestamptz',
+  notNull: true,
+  defaultValue: 'now()',
+  comment: null,
+  generation: null,
+  collation: null,
+}
+
+test('any member saves the common column set at the revision they edited', async () => {
+  const save = vi.fn<DatabaseRepository['saveCommonColumns']>(async () => ({ revision: 5 }))
+
+  const result = await service(
+    'member',
+    fakeDatabases({ saveCommonColumns: save }),
+  ).saveCommonColumns({
+    userId: 'u1',
+    productId: 'p1',
+    databaseId: 'd1',
+    columns: [createdAt],
+    expectedRevision: 4,
+  })
+
+  expect(save.mock.calls[0]?.[0]).toEqual({
+    productId: 'p1',
+    databaseId: 'd1',
+    commonColumns: [createdAt],
+    expectedRevision: 4,
+    userId: 'u1',
+    allowedRoles: ['owner', 'manager', 'member'],
+  })
+  expect(result).toEqual({ commonColumns: [createdAt], revisions: { database: 5 } })
+})
+
+test('checks the common columns against the product’s target before saving', async () => {
+  const save = vi.fn()
+  const sqlite = service('owner', fakeDatabases({ saveCommonColumns: save }), 'sqlite3')
+  const input = { userId: 'u1', productId: 'p1', databaseId: 'd1', expectedRevision: 4 }
+
+  await expect(
+    sqlite.saveCommonColumns({ ...input, columns: [{ ...createdAt, storage: 'main' }] }),
+  ).rejects.toMatchObject({
+    code: 'invalid_input',
+    fields: { 'columns.0.storage': expect.any(String) },
+  })
+  await expect(
+    service('owner', fakeDatabases({ findById: async () => null })).saveCommonColumns({
+      ...input,
+      columns: [],
+    }),
+  ).rejects.toMatchObject({ code: 'not_found' })
+  expect(save).not.toHaveBeenCalled()
 })

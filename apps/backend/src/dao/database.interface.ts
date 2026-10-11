@@ -112,6 +112,20 @@ export interface DatabaseDao {
     },
   ) => Promise<{ database: DatabaseRecord; productRevision: number }>
   /**
+   * Replaces the common column set (JSON) while the database scope is still at
+   * `expectedRevision`, bumping that revision only: the set isn't shown above the database scope
+   * and isn't an audited operation. Throws `stale_update` otherwise, if the database or product
+   * was deleted, or if the actor no longer has one of `allowedRoles`.
+   */
+  saveCommonColumns: (input: {
+    productId: string
+    databaseId: string
+    commonColumns: string
+    expectedRevision: number
+    userId: string
+    allowedRoles: Role[]
+  }) => Promise<{ revision: number }>
+  /**
    * Marks a database deleted with optimistic locking; its versions and design become unreachable
    * with it. Throws `stale_update` if it changed or was deleted since `expectedUpdatedAt`.
    */

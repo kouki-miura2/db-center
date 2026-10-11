@@ -228,6 +228,19 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
     }
   },
 
+  saveCommonColumns: async (input) => {
+    const results = await runBatch(db, [
+      actorHasRole(db, input.productId, input.userId, input.allowedRoles),
+      db
+        .prepare(
+          'UPDATE databases SET common_columns = ?, revision = revision + 1 WHERE id = ? AND product_id = ? AND revision = ? AND deleted_at IS NULL RETURNING revision',
+        )
+        .bind(input.commonColumns, input.databaseId, input.productId, input.expectedRevision),
+      staleGuard(db),
+    ])
+    return { revision: revisionAt(results, 1) }
+  },
+
   delete: async ({
     productId,
     databaseId,

@@ -34,6 +34,7 @@ const audit: AuditLogRecord = {
 }
 
 const created: Parameters<DatabaseDao['create']>[0][] = []
+const saved: string[] = []
 const fakeDao: DatabaseDao = {
   findById: async () => record,
   findScope: async (_, databaseId) => ({
@@ -46,6 +47,10 @@ const fakeDao: DatabaseDao = {
     return { productRevision: 4 }
   },
   update: async () => ({ database: { ...record, name: 'renamed' }, productRevision: 5 }),
+  saveCommonColumns: async (input) => {
+    saved.push(input.commonColumns)
+    return { revision: 7 }
+  },
   delete: async () => ({ productRevision: 6 }),
 }
 
@@ -100,4 +105,20 @@ test('maps the database scope, parsing the common column set', async () => {
     versions: [],
   })
   expect((await repository.findScope('p1', 'd2'))?.commonColumns).toEqual([{ name: 'created_at' }])
+})
+
+test('stores the common column set as JSON', async () => {
+  const repository = createDatabaseRepository(fakeDao)
+
+  const result = await repository.saveCommonColumns({
+    productId: 'p1',
+    databaseId: 'd1',
+    commonColumns: [{ name: 'created_at' }],
+    expectedRevision: 3,
+    userId: 'u1',
+    allowedRoles: ['owner'],
+  })
+
+  expect(result).toEqual({ revision: 7 })
+  expect(saved).toEqual(['[{"name":"created_at"}]'])
 })

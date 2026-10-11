@@ -15,6 +15,7 @@ import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
 import type { AuditLogService } from './service/audit-log.service.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
+import { columnSchema } from './service/column.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { DatabaseService } from './service/database.service.ts'
 import type { InvitationService } from './service/invitation.service.ts'
@@ -554,6 +555,28 @@ export const createApp = (deps: AppDependencies) => {
           const user = requireUser(c)
           return c.json(
             await deps.databaseService.updateDatabase({
+              userId: user.id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
+      // The common column set (any member), replaced as a whole.
+      .put(
+        '/products/:productId/databases/:databaseId/common-columns',
+        validate('param', databaseParams),
+        validate(
+          'json',
+          z.strictObject({
+            columns: z.array(columnSchema).max(LIMITS.columnsPerTable),
+            expectedRevision: z.number().int().positive(),
+          }),
+        ),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.databaseService.saveCommonColumns({
               userId: user.id,
               ...c.req.valid('param'),
               ...c.req.valid('json'),

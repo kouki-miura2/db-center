@@ -10,6 +10,7 @@ import type {
   Version,
 } from '../repository/database.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
+import { assertColumns, type Column } from './column.ts'
 import { allowedRoles, assertAllowed } from './permission.ts'
 import type { ScopeResult } from './product.service.ts'
 import { assertConfirmationName, requireMembership } from './product.service.ts'
@@ -54,7 +55,7 @@ export interface VersionView {
  */
 export interface DatabaseScopeView {
   database: DatabaseView
-  commonColumns: unknown[]
+  commonColumns: Column[]
   versions: VersionView[]
 }
 
@@ -80,6 +81,17 @@ export interface DatabaseService {
     description: string
     expectedUpdatedAt: number
   }) => Promise<{ database: DatabaseView; revisions: { product: number; database: number } }>
+  /**
+   * Replaces the common column set (any member). `expectedRevision` is the database scope's
+   * revision the client edited from; columns already added to tables don't change.
+   */
+  saveCommonColumns: (input: {
+    userId: string
+    productId: string
+    databaseId: string
+    columns: Column[]
+    expectedRevision: number
+  }) => Promise<{ commonColumns: Column[]; revisions: { database: number } }>
   /** `confirmationName` must be the database's current name. */
   deleteDatabase: (input: {
     userId: string
@@ -203,7 +215,8 @@ export const createDatabaseService = (deps: {
         revision: scope.database.revision,
         data: {
           database: toView(scope.database),
-          commonColumns: scope.commonColumns,
+          // Validated when saved.
+          commonColumns: scope.commonColumns as Column[],
           versions: scope.versions.toSorted((a, b) => b.number - a.number).map(toVersionView),
         },
       }
@@ -282,6 +295,22 @@ export const createDatabaseService = (deps: {
         database: toView(database),
         revisions: { product: productRevision, database: database.revision },
       }
+    },
+
+    saveCommonColumns: async ({ userId, productId, databaseId, columns, expectedRevision }) => {
+      const { product, role } = await requireMembership(deps.products, productId, userId)
+      assertAllowed(role, 'editCommonColumns')
+      await find(productId, databaseId)
+      assertColumns(product.target, columns, 'columns')
+      const { revision } = await deps.databases.saveCommonColumns({
+        productId,
+        databaseId,
+        commonColumns: columns,
+        expectedRevision,
+        userId,
+        allowedRoles: allowedRoles('editCommonColumns'),
+      })
+      return { commonColumns: columns, revisions: { database: revision } }
     },
 
     deleteDatabase: async ({

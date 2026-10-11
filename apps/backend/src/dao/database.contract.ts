@@ -284,4 +284,55 @@ export const databaseDaoContract = (setup: () => Promise<DatabaseDaoFixture>) =>
       code: 'stale_update',
     })
   })
+
+  const save = (
+    f: DatabaseDaoFixture,
+    overrides: Partial<Parameters<DatabaseDao['saveCommonColumns']>[0]> = {},
+  ) =>
+    f.dao.saveCommonColumns({
+      productId: 'p1',
+      databaseId: 'd1',
+      commonColumns: '[{"name":"created_at"}]',
+      expectedRevision: 1,
+      userId: 'u2',
+      allowedRoles: ['owner', 'manager', 'member'],
+      ...overrides,
+    })
+
+  test('saves the common column set, bumping only the database revision', async () => {
+    const f = await arrange()
+    await create(f, 'd1')
+    await f.addMember('p1', 'u2', 'member')
+
+    expect(await save(f)).toEqual({ revision: 2 })
+
+    const scope = await f.dao.findScope('p1', 'd1')
+    expect(scope?.commonColumns).toBe('[{"name":"created_at"}]')
+    expect(scope?.database).toMatchObject({ revision: 2, updatedAt: 1000 })
+    expect((await f.products.findScope('p1'))?.product.revision).toBe(2)
+    expect(await f.countAuditLogs()).toBe(2)
+  })
+
+  test('refuses to save common columns at a stale revision, for a role not allowed or a deleted database', async () => {
+    const f = await arrange()
+    await create(f, 'd1')
+    await f.addMember('p1', 'u2', 'member')
+
+    await expect(save(f, { expectedRevision: 2 })).rejects.toMatchObject({ code: 'stale_update' })
+    await expect(save(f, { allowedRoles: ['owner'] })).rejects.toMatchObject({
+      code: 'stale_update',
+    })
+    await expect(save(f, { productId: 'other' })).rejects.toMatchObject({ code: 'stale_update' })
+    expect((await f.dao.findScope('p1', 'd1'))?.commonColumns).toBeNull()
+
+    await f.dao.delete({
+      ...base,
+      productId: 'p1',
+      databaseId: 'd1',
+      expectedUpdatedAt: 1000,
+      now: 2000,
+      audit: audit('a-delete'),
+    })
+    await expect(save(f, { expectedRevision: 2 })).rejects.toMatchObject({ code: 'stale_update' })
+  })
 }

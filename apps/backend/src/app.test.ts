@@ -62,6 +62,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       getDatabase: unused,
       createDatabase: unused,
       updateDatabase: unused,
+      saveCommonColumns: unused,
       deleteDatabase: unused,
     },
     auditLogService: { list: unused },

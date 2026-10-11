@@ -36,6 +36,12 @@ export interface DatabaseRepository {
   update: (
     input: Parameters<DatabaseDao['update']>[0],
   ) => Promise<{ database: Database; productRevision: number }>
+  /** Stores the common column set as JSON. */
+  saveCommonColumns: (
+    input: Omit<Parameters<DatabaseDao['saveCommonColumns']>[0], 'commonColumns'> & {
+      commonColumns: unknown[]
+    },
+  ) => Promise<{ revision: number }>
   delete: DatabaseDao['delete']
 }
 
@@ -76,5 +82,7 @@ export const createDatabaseRepository = (dao: DatabaseDao): DatabaseRepository =
     const { database, productRevision } = await dao.update(input)
     return { database: toDatabase(database), productRevision }
   },
+  saveCommonColumns: ({ commonColumns, ...input }) =>
+    dao.saveCommonColumns({ ...input, commonColumns: JSON.stringify(commonColumns) }),
   delete: (input) => dao.delete(input),
 })

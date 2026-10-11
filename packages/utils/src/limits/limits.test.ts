@@ -21,6 +21,7 @@ test('matches the spec table', () => {
     databaseDescriptionMaxLength: 200,
     logicalNameMaxLength: 100,
     commentMaxLength: 500,
+    expressionMaxLength: 1000,
     connectionsPerProduct: 10,
     databasesPerProduct: 20,
     objectsPerVersion: 1000,
