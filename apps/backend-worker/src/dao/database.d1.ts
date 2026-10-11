@@ -20,7 +20,7 @@ interface DatabaseRow {
   deleted_at: number | null
 }
 
-interface VersionRow {
+export interface VersionRow {
   id: string
   database_id: string
   number: number
@@ -38,7 +38,7 @@ interface VersionRow {
   definition_bytes: number
 }
 
-const toVersionRecord = (row: VersionRow): VersionRecord => ({
+export const toVersionRecord = (row: VersionRow): VersionRecord => ({
   id: row.id,
   databaseId: row.database_id,
   number: row.number,

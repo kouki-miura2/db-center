@@ -43,6 +43,7 @@ beforeEach(() => {
     invitationService: {} as AppDependencies['invitationService'],
     memberService: {} as AppDependencies['memberService'],
     databaseService: {} as AppDependencies['databaseService'],
+    objectService: {} as AppDependencies['objectService'],
     revisionService: {} as AppDependencies['revisionService'],
     auditLogService: {} as AppDependencies['auditLogService'],
     // As in production: every path needs a session except the public ones.

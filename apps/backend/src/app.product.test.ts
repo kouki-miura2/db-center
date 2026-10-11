@@ -8,6 +8,7 @@ import { createDatabaseMemoryDao } from './dao/database.memory.ts'
 import { createInvitationMemoryDao } from './dao/invitation.memory.ts'
 import { createMemberMemoryDao } from './dao/member.memory.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
+import { createObjectMemoryDao } from './dao/object.memory.ts'
 import { createProductMemoryDao, memberKey, type MemberRow } from './dao/product.memory.ts'
 import { createRevisionMemoryDao } from './dao/revision.memory.ts'
 import type { UserRecord } from './dao/user.interface.ts'
@@ -17,6 +18,7 @@ import { createConnectionRepository } from './repository/connection.repository.t
 import { createDatabaseRepository } from './repository/database.repository.ts'
 import { createInvitationRepository } from './repository/invitation.repository.ts'
 import { createMemberRepository } from './repository/member.repository.ts'
+import { createObjectRepository } from './repository/object.repository.ts'
 import { createProductRepository } from './repository/product.repository.ts'
 import { createRevisionRepository } from './repository/revision.repository.ts'
 import { createAesGcmSecretBox } from './repository/secret-box.aes-gcm.ts'
@@ -26,6 +28,7 @@ import { createConnectionService } from './service/connection.service.ts'
 import { createDatabaseService } from './service/database.service.ts'
 import { createInvitationService } from './service/invitation.service.ts'
 import { createMemberService } from './service/member.service.ts'
+import { createObjectService } from './service/object.service.ts'
 import { createProductService } from './service/product.service.ts'
 import { createRevisionService } from './service/revision.service.ts'
 
@@ -82,6 +85,10 @@ beforeEach(() => {
     databaseService: createDatabaseService({
       products,
       databases: createDatabaseRepository(createDatabaseMemoryDao(db)),
+    }),
+    objectService: createObjectService({
+      products,
+      objects: createObjectRepository(createObjectMemoryDao(db)),
     }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionMemoryDao(db)),
@@ -968,4 +975,72 @@ describe('revision check', () => {
     expect((await request(ids(LIMITS.revisionCheckScopes), [])).status).toBe(200)
     expect((await request(['x'], [])).status).toBe(400)
   })
+})
+
+test('object routes isolate products, lock each object and return deletion deltas', async () => {
+  const { body: product } = await createProduct('u1', 'design')
+  const { database } = await (
+    await app.request(
+      `/api/products/${product.product.id}/databases`,
+      as('u1', 'POST', { name: 'main' }),
+    )
+  ).json()
+  const path = `/api/versions/${database.latestVersion.id}`
+  const initial = await (await app.request(path, as('u1'))).json()
+  const input = {
+    kind: 'table',
+    name: 'orders',
+    logicalName: null,
+    schemaKey: initial.data.objects[0].objectKey,
+    definition: { columns: [], constraints: [], indexes: [], size: null, options: {} },
+  }
+  expect((await app.request(path, as('u3'))).status).toBe(404)
+  const created = await app.request(`${path}/objects`, as('u1', 'POST', input))
+  expect(created.status).toBe(200)
+  const result = await created.json()
+  const objectPath = `${path}/objects/${result.object.objectKey}`
+  const saved = await app.request(
+    objectPath,
+    as('u1', 'PUT', { input, expectedUpdatedAt: result.object.updatedAt }),
+  )
+  const current = await saved.json()
+  expect(saved.status).toBe(200)
+  expect(
+    (
+      await app.request(
+        objectPath,
+        as('u1', 'PUT', { input, expectedUpdatedAt: result.object.updatedAt }),
+      )
+    ).status,
+  ).toBe(409)
+  expect(
+    (
+      await app.request(
+        objectPath,
+        as('u1', 'DELETE', {
+          confirmationName: 'wrong',
+          expectedUpdatedAt: current.object.updatedAt,
+        }),
+      )
+    ).status,
+  ).toBe(400)
+  expect(
+    (
+      await app.request(
+        objectPath,
+        as('u1', 'DELETE', {
+          confirmationName: 'orders',
+          expectedUpdatedAt: current.object.updatedAt,
+        }),
+      )
+    ).status,
+  ).toBe(200)
+  const delta = await (
+    await app.request(`${path}?revision=${current.revisions.version}`, as('u1'))
+  ).json()
+  expect(delta.mode).toBe('delta')
+  expect(delta.deletedKeys).toEqual([result.object.objectKey])
+  expect(
+    (await (await app.request(`${path}?revision=${delta.revision}`, as('u1'))).json()).mode,
+  ).toBe('unchanged')
 })

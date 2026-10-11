@@ -8,6 +8,7 @@ import type {
   VersionRecord,
 } from './database.interface.ts'
 import { appendAuditLog, assertCurrent, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
+import type { ObjectRecord } from './object.interface.ts'
 import { assertActorRole, bumpProductRevision } from './product.memory.ts'
 import { nextUpdatedAt } from './write.ts'
 
@@ -15,20 +16,7 @@ import { nextUpdatedAt } from './write.ts'
 export type DatabaseRow = DatabaseRecord & { commonColumns: string | null }
 
 /** One `objects` row. */
-export interface ObjectRow {
-  id: string
-  versionId: string
-  objectKey: string
-  kind: 'schema' | 'table' | 'view' | 'materialized_view' | 'sequence'
-  schemaKey: string | null
-  name: string
-  logicalName: string | null
-  definition: string
-  updatedBy: string
-  updatedAt: number
-  revision: number
-  deletedAt: number | null
-}
+export type ObjectRow = ObjectRecord
 
 export const databases = (db: MemoryDb) => memoryTable<DatabaseRow>(db, 'databases')
 export const versions = (db: MemoryDb) => memoryTable<VersionRecord>(db, 'versions')

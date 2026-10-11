@@ -6,6 +6,7 @@ import { createDatabaseRepository } from 'backend/src/repository/database.reposi
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
 import { createInvitationRepository } from 'backend/src/repository/invitation.repository.ts'
 import { createMemberRepository } from 'backend/src/repository/member.repository.ts'
+import { createObjectRepository } from 'backend/src/repository/object.repository.ts'
 import { createProductRepository } from 'backend/src/repository/product.repository.ts'
 import { createRevisionRepository } from 'backend/src/repository/revision.repository.ts'
 import { createAesGcmSecretBox } from 'backend/src/repository/secret-box.aes-gcm.ts'
@@ -16,6 +17,7 @@ import { createConnectionService } from 'backend/src/service/connection.service.
 import { createDatabaseService } from 'backend/src/service/database.service.ts'
 import { createInvitationService } from 'backend/src/service/invitation.service.ts'
 import { createMemberService } from 'backend/src/service/member.service.ts'
+import { createObjectService } from 'backend/src/service/object.service.ts'
 import { createProductService } from 'backend/src/service/product.service.ts'
 import { createRevisionService } from 'backend/src/service/revision.service.ts'
 
@@ -24,6 +26,7 @@ import { createConnectionD1Dao } from './dao/connection.d1.ts'
 import { createDatabaseD1Dao } from './dao/database.d1.ts'
 import { createInvitationD1Dao } from './dao/invitation.d1.ts'
 import { createMemberD1Dao } from './dao/member.d1.ts'
+import { createObjectD1Dao } from './dao/object.d1.ts'
 import { createProductD1Dao } from './dao/product.d1.ts'
 import { createRevisionD1Dao } from './dao/revision.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
@@ -72,6 +75,10 @@ const buildApp = (env: WorkerEnv) => {
     databaseService: createDatabaseService({
       products,
       databases: createDatabaseRepository(createDatabaseD1Dao(env.DB)),
+    }),
+    objectService: createObjectService({
+      products,
+      objects: createObjectRepository(createObjectD1Dao(env.DB)),
     }),
     revisionService: createRevisionService({
       revisions: createRevisionRepository(createRevisionD1Dao(env.DB)),

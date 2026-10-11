@@ -18,8 +18,10 @@ import type { AuthService, IssuedSession } from './service/auth.service.ts'
 import { columnSchema } from './service/column.ts'
 import type { ConnectionService } from './service/connection.service.ts'
 import type { DatabaseService } from './service/database.service.ts'
+import { objectInputSchema } from './service/definition.ts'
 import type { InvitationService } from './service/invitation.service.ts'
 import type { MemberService } from './service/member.service.ts'
+import type { ObjectService } from './service/object.service.ts'
 import type { ProductService } from './service/product.service.ts'
 import type { RevisionService } from './service/revision.service.ts'
 import { text, validate } from './validation.ts'
@@ -72,6 +74,7 @@ export interface AppDependencies {
   invitationService: InvitationService
   memberService: MemberService
   databaseService: DatabaseService
+  objectService: ObjectService
   revisionService: RevisionService
   auditLogService: AuditLogService
   auth: AuthConfig
@@ -600,6 +603,58 @@ export const createApp = (deps: AppDependencies) => {
             }),
           )
         },
+      )
+      .get(
+        '/versions/:versionId',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('query', revisionQuery),
+        async (c) =>
+          c.json(
+            await deps.objectService.getVersion({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              clientRevision: c.req.valid('query').revision,
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/objects',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate('json', objectInputSchema),
+        async (c) =>
+          c.json(
+            await deps.objectService.saveObject({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              input: c.req.valid('json'),
+            }),
+          ),
+      )
+      .put(
+        '/versions/:versionId/objects/:objectKey',
+        validate('param', z.object({ versionId: z.uuid(), objectKey: z.uuid() })),
+        validate('json', z.strictObject({ input: objectInputSchema, expectedUpdatedAt })),
+        async (c) =>
+          c.json(
+            await deps.objectService.saveObject({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .delete(
+        '/versions/:versionId/objects/:objectKey',
+        validate('param', z.object({ versionId: z.uuid(), objectKey: z.uuid() })),
+        validate('json', z.strictObject({ confirmationName, expectedUpdatedAt })),
+        async (c) =>
+          c.json(
+            await deps.objectService.deleteObject({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
       )
       // The audit log, newest first: `before` pages back, `after` gets what's new since.
       .get(

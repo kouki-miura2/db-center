@@ -65,6 +65,7 @@ const app = (overrides: Partial<AppDependencies> = {}) =>
       saveCommonColumns: unused,
       deleteDatabase: unused,
     },
+    objectService: { getVersion: unused, saveObject: unused, deleteObject: unused },
     revisionService: { check: unused },
     auditLogService: { list: unused },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
