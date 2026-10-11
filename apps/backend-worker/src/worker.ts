@@ -1,9 +1,12 @@
 import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from 'backend/src/app.ts'
 import { createSessionAuthGuard } from 'backend/src/repository/auth-guard.session.ts'
 import { createGoogleIdTokenVerifier } from 'backend/src/repository/google-id-token.jose.ts'
+import { createProductRepository } from 'backend/src/repository/product.repository.ts'
 import { createUserRepository } from 'backend/src/repository/user.repository.ts'
 import { createAuthService } from 'backend/src/service/auth.service.ts'
+import { createProductService } from 'backend/src/service/product.service.ts'
 
+import { createProductD1Dao } from './dao/product.d1.ts'
 import { createUserD1Dao } from './dao/user.d1.ts'
 
 /**
@@ -26,6 +29,9 @@ const buildApp = (env: WorkerEnv) => {
     authService: createAuthService({
       verifier: createGoogleIdTokenVerifier({ clientId: env.GOOGLE_CLIENT_ID || undefined }),
       users: createUserRepository(users),
+    }),
+    productService: createProductService({
+      products: createProductRepository(createProductD1Dao(env.DB)),
     }),
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: sessionCookie.name }),

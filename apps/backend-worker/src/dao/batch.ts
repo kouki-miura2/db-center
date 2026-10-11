@@ -18,17 +18,27 @@ export const staleGuard = (db: D1Database): D1PreparedStatement =>
   db.prepare("INSERT INTO batch_guard SELECT 'stale_update' WHERE changes() = 0")
 
 /**
- * Fails the batch with `limit_exceeded` when `exceededCondition` (an SQL expression, typically
+ * Fails the batch with `reason` when `failCondition` (an SQL expression over the batch's state so
+ * far) is true. Use it for rules checked at write time: a limit, a uniqueness rule an index can't
+ * express, or a permission that may have changed since it was read.
+ */
+export const guard = (
+  db: D1Database,
+  reason: 'stale_update' | 'limit_exceeded' | 'duplicate',
+  failCondition: string,
+  ...params: unknown[]
+): D1PreparedStatement =>
+  db.prepare(`INSERT INTO batch_guard SELECT ? WHERE ${failCondition}`).bind(reason, ...params)
+
+/**
+ * Fails the batch with `limit_exceeded` when `exceededCondition` (typically
  * `(SELECT count(*) ...) > ?`) is true. Put it after the INSERT it limits, so the count includes it.
  */
 export const limitGuard = (
   db: D1Database,
   exceededCondition: string,
   ...params: unknown[]
-): D1PreparedStatement =>
-  db
-    .prepare(`INSERT INTO batch_guard SELECT 'limit_exceeded' WHERE ${exceededCondition}`)
-    .bind(...params)
+): D1PreparedStatement => guard(db, 'limit_exceeded', exceededCondition, ...params)
 
 export const insertAuditLog = (db: D1Database, entry: AuditLogRecord): D1PreparedStatement =>
   db
@@ -74,6 +84,7 @@ export const runBatch = async (db: D1Database, statements: D1PreparedStatement[]
     if (text.includes('CHECK constraint failed: stale_update')) throw new AppError('stale_update')
     if (text.includes('CHECK constraint failed: limit_exceeded'))
       throw new AppError('limit_exceeded')
+    if (text.includes('CHECK constraint failed: duplicate')) throw new AppError('duplicate')
     if (text.includes('UNIQUE constraint failed')) throw new AppError('duplicate')
     throw error
   }

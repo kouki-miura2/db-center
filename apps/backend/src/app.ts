@@ -1,12 +1,13 @@
 import { type Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { csrf } from 'hono/csrf'
-import { createLogger, LIMITS, TERMS_VERSION } from 'utils'
+import { createLogger, LIMITS, TARGETS, type Target, TERMS_VERSION } from 'utils'
 import { z } from 'zod'
 
 import { AppError, errorResponse } from './error.ts'
 import type { AuthGuard, AuthenticatedUser } from './repository/auth-guard.interface.ts'
 import type { AuthService, IssuedSession } from './service/auth.service.ts'
+import type { ProductService } from './service/product.service.ts'
 import { text, validate } from './validation.ts'
 
 export interface AuthConfig {
@@ -52,6 +53,7 @@ const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]']
 
 export interface AppDependencies {
   authService: AuthService
+  productService: ProductService
   auth: AuthConfig
   sessionCookie: SessionCookieConfig
   /**
@@ -63,6 +65,15 @@ export interface AppDependencies {
 
 // Long enough for any Google ID token (a JWT of about 1 KB).
 const idToken = z.string().min(1).max(8192)
+
+// Input shared by several routes.
+const productId = z.object({ productId: z.uuid() })
+const productName = text(LIMITS.productNameMaxLength).min(1)
+const target = z.enum(Object.keys(TARGETS) as [Target, ...Target[]])
+/** The `updatedAt` the client last read: the write is refused if the data changed since. */
+const expectedUpdatedAt = z.number().int().nonnegative()
+/** The revision of a scope the client holds, if any (`?revision=`). */
+const revisionQuery = z.object({ revision: z.coerce.number().int().positive().optional() })
 
 type Variables = { user: AuthenticatedUser | null; requestId: string }
 
@@ -225,6 +236,38 @@ export const createApp = (deps: AppDependencies) => {
         deleteCookie(c, deps.sessionCookie.name, { path: '/', secure: deps.sessionCookie.secure })
         return c.body(null, 204)
       })
+      // The product list scope ("参照 > データの取得とキャッシュ").
+      .get('/products', validate('query', revisionQuery), async (c) => {
+        const user = requireUser(c)
+        return c.json(
+          await deps.productService.listProducts(user.id, c.req.valid('query').revision),
+        )
+      })
+      .post(
+        '/products',
+        validate('json', z.strictObject({ name: productName, target })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.productService.createProduct({ userId: user.id, ...c.req.valid('json') }),
+          )
+        },
+      )
+      .patch(
+        '/products/:productId',
+        validate('param', productId),
+        validate('json', z.strictObject({ name: productName, expectedUpdatedAt })),
+        async (c) => {
+          const user = requireUser(c)
+          return c.json(
+            await deps.productService.renameProduct({
+              userId: user.id,
+              productId: c.req.valid('param').productId,
+              ...c.req.valid('json'),
+            }),
+          )
+        },
+      )
       // Development login: signs in as any email without Google. Answers 404 unless the runtime
       // package turned it on explicitly and the request is to localhost.
       .post(

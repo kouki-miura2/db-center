@@ -4,12 +4,15 @@ import { beforeAll, beforeEach, expect, test } from 'vite-plus/test'
 
 import { createApp, PUBLIC_PATHS, SESSION_COOKIE } from './app.ts'
 import { createMemoryDb, type MemoryDb, memoryTable } from './dao/memory-db.ts'
+import { createProductMemoryDao } from './dao/product.memory.ts'
 import { createUserMemoryDao } from './dao/user.memory.ts'
 import { createSessionAuthGuard } from './repository/auth-guard.session.ts'
 import type { GoogleIdTokenVerifier } from './repository/google-id-token.interface.ts'
 import { createGoogleIdTokenVerifier } from './repository/google-id-token.jose.ts'
+import { createProductRepository } from './repository/product.repository.ts'
 import { createUserRepository } from './repository/user.repository.ts'
 import { createAuthService } from './service/auth.service.ts'
+import { createProductService } from './service/product.service.ts'
 import { hashSessionToken } from './service/session-token.ts'
 
 const CLIENT_ID = 'client-id.apps.example'
@@ -33,6 +36,9 @@ beforeEach(() => {
   const users = createUserMemoryDao(db)
   app = createApp({
     authService: createAuthService({ verifier, users: createUserRepository(users) }),
+    productService: createProductService({
+      products: createProductRepository(createProductMemoryDao(db)),
+    }),
     // As in production: every path needs a session except the public ones.
     auth: {
       guard: createSessionAuthGuard({ users, cookieName: SESSION_COOKIE.production.name }),
@@ -262,7 +268,7 @@ const withSession = (token: string, init: { method?: string; body?: string } = {
 test('a user on an older terms version is refused everything but their account and consent', async () => {
   const token = await outdatedUser()
 
-  // Any other path, even one that doesn't exist, is refused before it is reached.
+  // Any other path is refused before it is reached.
   const refused = await app.request('/api/products', withSession(token))
   expect(refused.status).toBe(403)
   expect(await refused.json()).toMatchObject({ error: { code: 'consent_required' } })
@@ -283,8 +289,8 @@ test('agreeing to the current terms lets the user in again', async () => {
 
   expect(await res.json()).toMatchObject({ consentRequired: false })
   expect(await (await me(token)).json()).toMatchObject({ consentRequired: false })
-  // Past the consent check now: an unknown path is a plain 404.
-  expect((await app.request('/api/products', withSession(token))).status).toBe(404)
+  // Past the consent check now.
+  expect((await app.request('/api/products', withSession(token))).status).toBe(200)
 })
 
 test.each([

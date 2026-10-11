@@ -37,6 +37,11 @@ const fakeAuthService: AuthService = {
 const app = (overrides: Partial<AppDependencies> = {}) =>
   createApp({
     authService: fakeAuthService,
+    productService: {
+      listProducts: unused,
+      createProduct: unused,
+      renameProduct: unused,
+    },
     auth: { guard: denyAllGuard, enabled: true, excludePaths: [] },
     sessionCookie: SESSION_COOKIE.development,
     devLogin: false,
