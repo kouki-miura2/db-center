@@ -906,6 +906,7 @@ describe('databases', () => {
             finalizedAt: null,
             createdAt: database.createdAt,
             updatedAt: database.createdAt,
+            revision: 1,
             schemaCount: 1,
             tableCount: 0,
           },

@@ -288,6 +288,7 @@ test('returns the whole database scope, versions newest first', async () => {
     finalizedAt: null,
     createdAt: 3,
     updatedAt: 3,
+    revision: 1,
     schemaCount: 1,
     tableCount: 3,
   })

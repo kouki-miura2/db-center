@@ -45,6 +45,8 @@ export interface VersionView {
   finalizedAt: number | null
   createdAt: number
   updatedAt: number
+  /** The version scope's revision: sent back as `expectedRevision` to create a version from it. */
+  revision: number
   schemaCount: number
   tableCount: number
 }
@@ -130,6 +132,7 @@ const toVersionView = (version: Version): VersionView => ({
   finalizedAt: version.finalizedAt,
   createdAt: version.createdAt,
   updatedAt: version.updatedAt,
+  revision: version.revision,
   schemaCount: version.schemaCount,
   tableCount: version.tableCount,
 })
