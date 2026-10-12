@@ -99,5 +99,12 @@ export const routes: RouteRecordRaw[] = [
     props: true,
     meta: { crumb: 'データベース設計' },
   },
+  {
+    path: '/products/:productId/databases/:databaseId/versions/:versionId/objects/:objectKey',
+    name: 'design-object',
+    component: () => import('../views/DatabaseOverviewView.vue'),
+    props: true,
+    meta: { crumb: 'データベース設計' },
+  },
   { path: '/:pathMatch(.*)*', redirect: { name: 'products' } },
 ]

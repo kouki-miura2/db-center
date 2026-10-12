@@ -2,6 +2,7 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 import AppBar from './components/app/AppBar.vue'
 import { useOnline } from './composables/useOnline.ts'
@@ -11,6 +12,10 @@ import { useRevisionCheck } from './composables/useRevisionCheck.ts'
 import { useNotificationStore } from './stores/notification.ts'
 
 const route = useRoute()
+const { xs } = useDisplay()
+const isDesign = computed(() =>
+  ['database', 'design', 'design-object'].includes(String(route.name)),
+)
 const notification = useNotificationStore()
 const online = useOnline()
 const product = useProductQuery(() => String(route.params.productId ?? ''))
@@ -46,7 +51,7 @@ useRevisionCheck(useQueryClient())
 <template>
   <v-app>
     <AppBar
-      v-if="!route.meta.public"
+      v-if="!route.meta.public && !(xs && isDesign)"
       :crumb="crumb"
       :mobile-title="mobileTitle"
       :back="route.meta.crumb ? back : undefined"

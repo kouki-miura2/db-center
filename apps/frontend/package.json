@@ -11,6 +11,11 @@
     "preview": "vp preview"
   },
   "dependencies": {
+    "@codemirror/commands": "catalog:",
+    "@codemirror/lang-sql": "catalog:",
+    "@codemirror/language": "catalog:",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:",
     "@mdi/font": "catalog:",
     "@tanstack/query-persist-client-core": "catalog:",
     "@tanstack/vue-query": "catalog:",
