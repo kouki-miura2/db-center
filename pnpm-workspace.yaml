@@ -24,6 +24,8 @@ catalog:
   '@types/pg': ^8.23.1
   '@tanstack/query-persist-client-core': ^5.104.1
   idb-keyval: ^6.3.0
+  sortablejs: ^1.15.7
+  '@types/sortablejs': ^1.15.9
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:

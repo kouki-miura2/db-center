@@ -12,6 +12,12 @@ test.each([
   ['/privacy', 'privacy'],
   ['/consent', 'consent'],
   ['/products', 'products'],
+  ['/products/new', 'product-new'],
+  ['/products/join', 'product-join'],
+  ['/products/p1', 'product'],
+  ['/products/p1/settings', 'product-settings'],
+  ['/products/p1/invite', 'product-invite'],
+  ['/products/p1/history', 'product-history'],
 ])('resolves %s to %s', (path, name) => {
   expect(resolve(path).name).toBe(name)
 })
