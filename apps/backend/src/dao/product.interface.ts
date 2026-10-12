@@ -1,11 +1,11 @@
-import type { Target } from 'utils'
+import type { Role, Target } from 'utils'
 
 import type { AuditLogRecord } from './audit-log.interface.ts'
 import type { ConnectionRecord } from './connection.interface.ts'
 import type { DatabaseSummaryRecord } from './database.interface.ts'
 import type { InvitationRecord } from './invitation.interface.ts'
 
-export type Role = 'owner' | 'manager' | 'member'
+export type { Role }
 
 /** One `products` row. */
 export interface ProductRecord {
