@@ -55,6 +55,8 @@ export const postgresConstraint = (
     return `${prefix} UNIQUE${constraint.nullsDistinct ? '' : ' NULLS NOT DISTINCT'} (${tableColumns(table, constraint.columns)})${defer}`
   if (constraint.kind === 'check')
     return `${prefix} CHECK (${constraint.expression})${constraint.notValid ? ' NOT VALID' : ''}`
+  if (constraint.kind === 'exclude')
+    return `${prefix} EXCLUDE USING ${constraint.method} (${constraint.elements.map((v) => `${v.columnKey ? tableColumns(table, [v.columnKey]) : `(${v.expression})`} WITH ${v.operator}`).join(', ')})${constraint.where ? ` WHERE (${constraint.where})` : ''}${defer}`
   const target = objects.find(
     (v) => v.kind === 'table' && v.objectKey === constraint.referenceTableKey,
   )
@@ -72,7 +74,7 @@ export const postgresIndex = (
   const columns = index.columns
     .map(
       (v) =>
-        `${v.columnKey ? tableColumns(table, [v.columnKey]) : `(${v.expression})`} ${v.order}${v.nulls ? ` NULLS ${v.nulls}` : ''}`,
+        `${v.columnKey ? tableColumns(table, [v.columnKey]) : `(${v.expression})`}${v.operatorClass ? ` ${qualifiedIdentifier(v.operatorClass)}` : ''} ${v.order}${v.nulls ? ` NULLS ${v.nulls}` : ''}`,
     )
     .join(', ')
   return `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX ${concurrently ? 'CONCURRENTLY ' : ''}${ifNotExists ? 'IF NOT EXISTS ' : ''}${q(index.name)} ON ${objectName(object, objects, 'postgresql18')} USING ${index.method} (${columns})${index.include.length ? ` INCLUDE (${tableColumns(table, index.include)})` : ''}${index.fillfactor !== null ? ` WITH (fillfactor = ${index.fillfactor})` : ''}${index.where ? ` WHERE (${index.where})` : ''};`

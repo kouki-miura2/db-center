@@ -45,6 +45,7 @@ export interface ObjectDao {
   ) => Promise<{ context: VersionContext; objects: ObjectRecord[] } | null>
   save: (input: ObjectWrite) => Promise<{
     object: ObjectRecord
+    version: VersionContext['version']
     revisions: { version: number; database: number; product: number }
   }>
 }

@@ -17,7 +17,7 @@ export interface SizeColumn {
 }
 export interface SizeTable {
   columns: SizeColumn[]
-  constraints: { kind: string; columns?: string[] }[]
+  constraints: { kind: string; columns?: string[]; elements?: { columnKey: string | null }[] }[]
   indexes: {
     columns: { columnKey: string | null }[]
     include: string[]
@@ -102,8 +102,12 @@ export const estimateTableSize = (target: Target, table: SizeTable, input: SizeI
       fillfactor: v.fillfactor ?? 90,
     })),
     ...table.constraints
-      .filter((v) => v.kind === 'primary_key' || v.kind === 'unique')
-      .map((v) => ({ keys: v.columns ?? [], fillfactor: 90 })),
+      .filter((v) => v.kind === 'primary_key' || v.kind === 'unique' || v.kind === 'exclude')
+      .map((v) => ({
+        keys:
+          v.kind === 'exclude' ? (v.elements?.map((e) => e.columnKey) ?? []) : (v.columns ?? []),
+        fillfactor: 90,
+      })),
   ]
   const perIndex = indexes.map((v) => {
     if (!Number.isFinite(v.fillfactor) || v.fillfactor < 10 || v.fillfactor > 100)
@@ -129,11 +133,11 @@ export const estimateTableSize = (target: Target, table: SizeTable, input: SizeI
     )
     const tableBytes =
       rows === 0 ? 0 : Math.ceil((rows * averageRowBytes) / (fillfactor / 100) / (8192 - 24)) * 8192
-    const indexBytes = perIndex.reduce(
-      (sum, width) => sum + (rows === 0 ? 0 : Math.ceil((rows * width) / (8192 - 24)) * 8192),
-      0,
+    const indexSizes = perIndex.map((width) =>
+      rows === 0 ? 0 : Math.ceil((rows * width) / (8192 - 24)) * 8192,
     )
-    return { years, rows, tableBytes, indexBytes, totalBytes: tableBytes + indexBytes }
+    const indexBytes = indexSizes.reduce((sum, value) => sum + value, 0)
+    return { years, rows, tableBytes, indexBytes, indexSizes, totalBytes: tableBytes + indexBytes }
   })
   const peakWritesPerSecond =
     (input.inserts + input.updates + input.deletes) * unitsPerSecond * input.peakFactor

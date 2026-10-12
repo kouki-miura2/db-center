@@ -161,9 +161,10 @@ export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
       statements.push(
         db
           .prepare(
-            'UPDATE objects SET schema_key = ?, name = ?, logical_name = ?, definition = ?, updated_by = ?, updated_at = max(?, updated_at + 1), revision = (SELECT revision FROM versions WHERE id = ?), deleted_at = ? WHERE version_id = ? AND object_key = ? AND kind = ? AND updated_at = ? AND deleted_at IS NULL RETURNING *',
+            "UPDATE objects SET kind = ?, schema_key = ?, name = ?, logical_name = ?, definition = ?, updated_by = ?, updated_at = max(?, updated_at + 1), revision = (SELECT revision FROM versions WHERE id = ?), deleted_at = ? WHERE version_id = ? AND object_key = ? AND (kind = ? OR (kind IN ('view', 'materialized_view') AND ? IN ('view', 'materialized_view'))) AND updated_at = ? AND deleted_at IS NULL RETURNING *",
           )
           .bind(
+            r.kind,
             r.schemaKey,
             r.name,
             r.logicalName,
@@ -175,6 +176,7 @@ export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
             versionId,
             r.objectKey,
             r.kind,
+            r.kind,
             input.expectedUpdatedAt,
           ),
         staleGuard(db),
@@ -184,7 +186,7 @@ export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
     statements.push(
       db
         .prepare(
-          'UPDATE versions SET definition_bytes = definition_bytes + ?, schema_count = schema_count + ?, table_count = table_count + ? WHERE id = ? RETURNING revision',
+          'UPDATE versions SET definition_bytes = definition_bytes + ?, schema_count = schema_count + ?, table_count = table_count + ? WHERE id = ? RETURNING *',
         )
         .bind(
           input.delete ? 0 : new TextEncoder().encode(r.definition).length,
@@ -215,6 +217,7 @@ export const createObjectD1Dao = (db: D1Database): ObjectDao => ({
     const revision = (index: number) => (result[index]!.results[0] as { revision: number }).revision
     return {
       object: toRecord(result[objectIndex]?.results[0] as ObjectSqlRow),
+      version: toVersionRecord(result[versionIndex]?.results[0] as VersionRow),
       revisions: {
         version: revision(versionIndex),
         database: revision(databaseIndex),

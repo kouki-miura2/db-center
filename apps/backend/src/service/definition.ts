@@ -42,6 +42,26 @@ export const constraintSchema = z.discriminatedUnion('kind', [
     expression,
     notValid: z.boolean().default(false),
   }),
+  z.strictObject({
+    ...constraintBase,
+    kind: z.literal('exclude'),
+    method: z.enum(['btree', 'hash', 'gist', 'spgist', 'gin', 'brin']),
+    elements: z
+      .array(
+        z
+          .strictObject({
+            columnKey: z.uuid().nullable(),
+            expression: expression.nullable(),
+            operator: expression,
+          })
+          .refine((v) => (v.columnKey === null) !== (v.expression === null)),
+      )
+      .min(1)
+      .max(LIMITS.columnsPerTable),
+    where: expression.nullable(),
+    deferrable: z.boolean(),
+    initiallyDeferred: z.boolean(),
+  }),
 ])
 export const indexSchema = z.strictObject({
   key: z.uuid(),
@@ -55,6 +75,7 @@ export const indexSchema = z.strictObject({
           expression: expression.nullable(),
           order: z.enum(['ASC', 'DESC']).default('ASC'),
           nulls: z.enum(['FIRST', 'LAST']).nullable().default(null),
+          operatorClass: expression.nullable().optional(),
         })
         .refine(
           (v) => (v.columnKey === null) !== (v.expression === null),
@@ -187,6 +208,8 @@ export const assertTableDefinition = (target: Target, definition: TableDefinitio
     fail('主キーは一つだけ指定できます')
   definition.constraints.forEach((v) => {
     if ('columns' in v) references(v.columns)
+    if (v.kind === 'exclude')
+      references(v.elements.flatMap((e) => (e.columnKey ? [e.columnKey] : [])))
     if (
       v.kind === 'foreign_key' &&
       (v.columns.length !== v.referenceColumns.length ||
@@ -232,11 +255,12 @@ export const assertTableDefinition = (target: Target, definition: TableDefinitio
         v.include.length ||
         v.fillfactor !== null ||
         v.concurrently ||
-        v.columns.some((c) => c.nulls !== null)
+        v.columns.some((c) => c.nulls !== null || c.operatorClass)
       )
         fail('SQLite のインデックスに未対応の設定があります')
     })
     definition.constraints.forEach((v) => {
+      if (v.kind === 'exclude') fail('SQLite では EXCLUDE は指定できません')
       if (
         ('notValid' in v && v.notValid) ||
         ('nullsDistinct' in v && !v.nullsDistinct) ||

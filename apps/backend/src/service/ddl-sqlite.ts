@@ -40,6 +40,7 @@ export const sqliteConstraint = (
   if (constraint.kind === 'unique')
     return `${prefix} UNIQUE (${tableColumns(table, constraint.columns)})`
   if (constraint.kind === 'check') return `${prefix} CHECK (${constraint.expression})`
+  if (constraint.kind === 'exclude') return invalidDdl('SQLite では EXCLUDE は指定できません')
   const target = objects.find(
     (v) => v.kind === 'table' && v.objectKey === constraint.referenceTableKey,
   )

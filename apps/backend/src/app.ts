@@ -647,17 +647,63 @@ export const createApp = (deps: AppDependencies) => {
           ),
       )
       .post(
-        '/versions/:versionId/objects',
+        '/versions/:versionId/table-ddl',
         validate('param', z.object({ versionId: z.uuid() })),
-        validate('json', objectInputSchema),
+        validate(
+          'json',
+          z.strictObject({ objectKey: z.uuid().optional(), input: objectInputSchema }),
+        ),
         async (c) =>
           c.json(
+            await deps.objectService.tableDdl({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/view-validation',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate(
+          'json',
+          z.strictObject({
+            objectKey: z.uuid().optional(),
+            schemaKey: z.uuid().nullable(),
+            select: text(LIMITS.versionDefinitionBytes).min(1),
+          }),
+        ),
+        async (c) =>
+          c.json(
+            await deps.objectService.validateView({
+              userId: requireUser(c).id,
+              ...c.req.valid('param'),
+              ...c.req.valid('json'),
+            }),
+          ),
+      )
+      .post(
+        '/versions/:versionId/objects',
+        validate('param', z.object({ versionId: z.uuid() })),
+        validate(
+          'json',
+          z.union(
+            objectInputSchema.options.map((schema) =>
+              schema.extend({ objectKey: z.uuid().optional() }),
+            ),
+          ),
+        ),
+        async (c) => {
+          const { objectKey, ...input } = c.req.valid('json')
+          return c.json(
             await deps.objectService.saveObject({
               userId: requireUser(c).id,
               ...c.req.valid('param'),
-              input: c.req.valid('json'),
+              input,
+              newObjectKey: objectKey,
             }),
-          ),
+          )
+        },
       )
       .put(
         '/versions/:versionId/objects/:objectKey',

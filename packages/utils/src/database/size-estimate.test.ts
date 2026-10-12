@@ -50,3 +50,17 @@ test('invalid values and overflowing calculations are refused', () => {
   ).toThrow()
   expect(() => estimateTableSize('postgresql18', table, { ...input, retentionYears: 0 })).toThrow()
 })
+test('EXCLUDE automatic indexes and individual estimates contribute to the same total', () => {
+  const result = estimateTableSize(
+    'postgresql18',
+    {
+      ...table,
+      constraints: [...table.constraints, { kind: 'exclude', elements: [{ columnKey: 'id' }] }],
+    },
+    input,
+  )
+  expect(result.snapshots[3]!.indexSizes).toHaveLength(2)
+  expect(result.snapshots[3]!.indexSizes.reduce((a, b) => a + b, 0)).toBe(
+    result.snapshots[3]!.indexBytes,
+  )
+})

@@ -59,7 +59,14 @@ export const createObjectMemoryDao = (db: MemoryDb): ObjectDao => ({
       if (input.expectedUpdatedAt !== null) {
         if (!current || current.deletedAt !== null) throw new AppError('stale_update')
         assertCurrent(current, input.expectedUpdatedAt)
-        if (current.kind !== input.record.kind) throw new AppError('stale_update')
+        if (
+          current.kind !== input.record.kind &&
+          !(
+            ['view', 'materialized_view'].includes(current.kind) &&
+            ['view', 'materialized_view'].includes(input.record.kind)
+          )
+        )
+          throw new AppError('stale_update')
       } else if (current) throw new AppError('duplicate')
       if (
         !input.delete &&
@@ -113,6 +120,7 @@ export const createObjectMemoryDao = (db: MemoryDb): ObjectDao => ({
       appendAuditLog(db, input.audit)
       return {
         object: structuredClone(record),
+        version: structuredClone(version),
         revisions: { version: version.revision, database: database.revision, product },
       }
     }),

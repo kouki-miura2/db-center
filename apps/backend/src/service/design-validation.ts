@@ -112,6 +112,28 @@ export const validateDesign = async (
               table.columns.map((v) => v.name),
             ),
           )
+        if (constraint.kind === 'exclude') {
+          for (const element of constraint.elements) {
+            if (!/^(?:[+\-*/<>=~!@#%^&|`?]+|OPERATOR\([\w.]+\))$/.test(element.operator))
+              add(object, path, 'invalid_operator', '演算子を指定してください')
+            if (element.expression)
+              await check(object, path, () =>
+                sql.validateExpression(
+                  context.target,
+                  element.expression!,
+                  table.columns.map((v) => v.name),
+                ),
+              )
+          }
+          if (constraint.where)
+            await check(object, path, () =>
+              sql.validateExpression(
+                context.target,
+                constraint.where!,
+                table.columns.map((v) => v.name),
+              ),
+            )
+        }
         if (constraint.kind === 'foreign_key') {
           const reference = objects.find(
             (v) => v.kind === 'table' && v.objectKey === constraint.referenceTableKey,

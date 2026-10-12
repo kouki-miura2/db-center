@@ -54,6 +54,8 @@ export const objectDaoContract = (
     const update = { ...f.input('a'), record: a.object, expectedUpdatedAt: a.object.updatedAt }
     const saved = await f.dao.save(update)
     expect(saved.revisions.version).toBe(4)
+    expect(saved.version.revision).toBe(saved.revisions.version)
+    expect(saved.version.tableCount).toBe(2)
     expect((await f.dao.findContext('v1'))!.version.tableCount).toBe(2)
     const before = await f.audits()
     await expect(f.dao.save(update)).rejects.toMatchObject({ code: 'stale_update' })
@@ -77,6 +79,26 @@ export const objectDaoContract = (
     const ahead = (await f.dao.findScope('v1', current + 1))!.objects
     expect(ahead).toHaveLength(2)
     expect(ahead.some((o) => o.deletedAt !== null)).toBe(false)
+  })
+  test('view kind switches preserve stable keys; unrelated kind changes stay forbidden', async () => {
+    const f = await arrange(),
+      input = f.input('view')
+    input.record.kind = 'view'
+    const created = await f.dao.save(input)
+    const changed = await f.dao.save({
+      ...f.input('view'),
+      record: { ...created.object, kind: 'materialized_view' },
+      expectedUpdatedAt: created.object.updatedAt,
+    })
+    expect(changed.object.kind).toBe('materialized_view')
+    expect(changed.object.objectKey).toBe(created.object.objectKey)
+    await expect(
+      f.dao.save({
+        ...input,
+        record: { ...changed.object, kind: 'table' },
+        expectedUpdatedAt: changed.object.updatedAt,
+      }),
+    ).rejects.toMatchObject({ code: 'stale_update' })
   })
   test('limits, duplicate names, and changed membership roll back every side effect', async () => {
     const f = await arrange()

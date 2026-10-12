@@ -5,6 +5,9 @@ import { AppError } from '../error.ts'
 import type { DesignObject, ObjectRepository } from '../repository/object.repository.ts'
 import type { ProductRepository } from '../repository/product.repository.ts'
 import type { SqlValidator, ViewAnalysis } from '../repository/sql-validator.interface.ts'
+import { postgresColumn, postgresConstraint, postgresIndex } from './ddl-postgres.ts'
+import { sqliteTable, sqliteIndex } from './ddl-sqlite.ts'
+import { objectName } from './ddl.ts'
 import { assertSequence, assertTableDefinition, type ObjectInput } from './definition.ts'
 import { allowedRoles } from './permission.ts'
 import { assertConfirmationName, requireMembership } from './product.service.ts'
@@ -53,6 +56,83 @@ export const createObjectService = (deps: {
     })
   }
   return {
+    tableDdl: async ({
+      userId,
+      versionId,
+      objectKey,
+      input,
+    }: {
+      userId: string
+      versionId: string
+      objectKey?: string
+      input: ObjectInput
+    }) => {
+      const context = await authorize(userId, versionId)
+      if (input.kind !== 'table' || !deps.sql) throw new AppError('invalid_input')
+      assertTableDefinition(context.target, input.definition)
+      const scope = await deps.objects.findScope(versionId)
+      if (!scope) throw new AppError('not_found')
+      const object: DesignObject = {
+        ...input,
+        objectKey: objectKey ?? crypto.randomUUID(),
+        id: '',
+        versionId,
+        updatedBy: userId,
+        updatedAt: 0,
+        revision: 0,
+        deletedAt: null,
+      }
+      const objects = [
+        ...scope.objects.filter((v) => v.objectKey !== objectKey && v.deletedAt === null),
+        object,
+      ]
+      const statements =
+        context.target === 'sqlite3'
+          ? [
+              sqliteTable(object, objects),
+              ...input.definition.indexes.map((index) => sqliteIndex(object, index)),
+            ]
+          : [
+              `CREATE TABLE ${objectName(object, objects, context.target)} (\n  ${[...input.definition.columns.map(postgresColumn), ...input.definition.constraints.map((c) => postgresConstraint(c, input.definition, objects))].join(',\n  ')}\n)${input.definition.options.fillfactor ? ` WITH (fillfactor = ${input.definition.options.fillfactor})` : ''};`,
+              ...input.definition.indexes.map((index) =>
+                postgresIndex(object, index, objects, false, false),
+              ),
+            ]
+      await deps.sql.validateDdl(context.target, statements)
+      return { sql: statements.join('\n\n') }
+    },
+    validateView: async ({
+      userId,
+      versionId,
+      objectKey,
+      schemaKey,
+      select,
+    }: {
+      userId: string
+      versionId: string
+      objectKey?: string
+      schemaKey: string | null
+      select: string
+    }) => {
+      const context = await authorize(userId, versionId)
+      if (!deps.sql) throw new AppError('invalid_state')
+      const scope = await deps.objects.findScope(versionId)
+      if (!scope) throw new AppError('not_found')
+      if (
+        (context.target === 'sqlite3') !== (schemaKey === null) ||
+        (schemaKey &&
+          !scope.objects.some(
+            (v) => v.kind === 'schema' && v.objectKey === schemaKey && v.deletedAt === null,
+          ))
+      )
+        throw new AppError('invalid_input')
+      return deps.sql.validateView(
+        context.target,
+        select,
+        scope.objects.filter((v) => v.objectKey !== objectKey && v.deletedAt === null),
+        schemaKey,
+      )
+    },
     getVersion: async ({
       userId,
       versionId,
@@ -98,12 +178,14 @@ export const createObjectService = (deps: {
       userId,
       versionId,
       objectKey,
+      newObjectKey,
       expectedUpdatedAt,
       input,
     }: {
       userId: string
       versionId: string
       objectKey?: string
+      newObjectKey?: string
       expectedUpdatedAt?: number
       input: ObjectInput
     }) => {
@@ -147,7 +229,7 @@ export const createObjectService = (deps: {
         {
           ...input,
           id: crypto.randomUUID(),
-          objectKey: objectKey ?? crypto.randomUUID(),
+          objectKey: objectKey ?? newObjectKey ?? crypto.randomUUID(),
           versionId,
           updatedBy: userId,
           updatedAt: 0,
