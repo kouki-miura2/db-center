@@ -12,7 +12,7 @@ import { CACHE_MAX_AGE_MS } from '../plugins/query.ts'
 // キャッシュ"), so the last data shows at once when the app opens, and offline.
 
 /** Raise when the shape of cached data changes, so an old cache is dropped instead of misread. */
-const CACHE_BUSTER = '1'
+const CACHE_BUSTER = '2' // Deployment responses now include executedByName.
 
 const cacheKey = (userId: string) => `query-cache:${userId}`
 

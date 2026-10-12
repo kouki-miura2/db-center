@@ -1,4 +1,6 @@
 import { AppError } from '../error.ts'
+import type { DatabaseRecord } from './database.interface.ts'
+import type { DeploymentRecord } from './deployment.interface.ts'
 import { appendAuditLog, atomic, type MemoryDb, memoryTable } from './memory-db.ts'
 import type { ProductRecord } from './product.interface.ts'
 import type { MemberRow } from './product.memory.ts'
@@ -59,6 +61,22 @@ export const createUserMemoryDao = (db: MemoryDb): UserDao => ({
         ([, row]) => row.role === 'owner' && products.get(row.productId)?.deletedAt === null,
       )
       if (ownsActive) throw new AppError('stale_update')
+      // Even histories in products left earlier must replace the executor's name in caches.
+      const deployments = memoryTable<DeploymentRecord>(db, 'deployments')
+      const databaseIds = new Set(
+        [...deployments.values()]
+          .filter((row) => row.executedBy === userId)
+          .map((row) => row.databaseId),
+      )
+      for (const databaseId of databaseIds) {
+        const database = memoryTable<DatabaseRecord>(db, 'databases').get(databaseId)
+        if (!database) continue
+        database.revision++
+        for (const row of deployments.values()) {
+          if (row.databaseId === databaseId && row.executedBy === userId)
+            row.revision = database.revision
+        }
+      }
       for (const [key, row] of mine) {
         // Owner rows remain only for deleted products, until those are purged.
         if (row.role === 'owner') continue

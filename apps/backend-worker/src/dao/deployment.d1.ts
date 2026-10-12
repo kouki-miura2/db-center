@@ -1,4 +1,8 @@
-import type { DeploymentDao, DeploymentRecord } from 'backend/src/dao/deployment.interface.ts'
+import type {
+  DeploymentDao,
+  DeploymentReadRecord,
+  DeploymentRecord,
+} from 'backend/src/dao/deployment.interface.ts'
 import type { Role } from 'backend/src/dao/product.interface.ts'
 import { AppError } from 'backend/src/error.ts'
 
@@ -6,7 +10,7 @@ import { guard, insertAuditLog, runBatch, staleGuard } from './batch.ts'
 import { actorHasRole, bumpProductRevision } from './product.d1.ts'
 
 type Row = { [K in string]: unknown }
-export const toDeploymentRecord = (r: Row): DeploymentRecord => ({
+export const toDeploymentRecord = (r: Row): DeploymentReadRecord => ({
   id: r.id as string,
   productId: r.product_id as string,
   databaseId: r.database_id as string,
@@ -18,6 +22,7 @@ export const toDeploymentRecord = (r: Row): DeploymentRecord => ({
   status: r.status as DeploymentRecord['status'],
   phase: r.phase as DeploymentRecord['phase'],
   executedBy: r.executed_by as string,
+  executedByName: r.executed_by_name as string,
   startedAt: r.started_at as number,
   finishedAt: r.finished_at as number | null,
   log: r.log as string | null,
@@ -76,14 +81,22 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
     return r.meta.changes === 1
   }
   return {
-    findById: (id) => find('SELECT * FROM deployments WHERE id=?', id),
+    findById: (id) =>
+      find(
+        'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.id=?',
+        id,
+      ),
     findByKey: (id, key) =>
-      find('SELECT * FROM deployments WHERE connection_id=? AND idempotency_key=?', id, key),
+      find(
+        'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.connection_id=? AND x.idempotency_key=?',
+        id,
+        key,
+      ),
     listByVersion: async (versionId) =>
       (
         await db
           .prepare(
-            'SELECT * FROM deployments WHERE to_version_id=? ORDER BY started_at DESC,id DESC',
+            'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.to_version_id=? ORDER BY x.started_at DESC,x.id DESC',
           )
           .bind(versionId)
           .all<Row>()
@@ -92,7 +105,8 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
     findForMember: async (id, userId) => {
       const row = await db
         .prepare(
-          `SELECT x.*, m.role AS member_role FROM deployments x
+          `SELECT x.*, u.name AS executed_by_name, m.role AS member_role FROM deployments x
+          JOIN users u ON u.id = x.executed_by
           JOIN versions v ON v.id = x.to_version_id
           JOIN databases d ON d.id = v.database_id AND d.deleted_at IS NULL
           JOIN products p ON p.id = d.product_id AND p.id = x.product_id AND p.deleted_at IS NULL
@@ -180,12 +194,22 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
         .run()
     },
     finish: async (id, status, log, now) => {
-      const r = await find('SELECT * FROM deployments WHERE id=?', id)
+      const r = await find(
+        'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.id=?',
+        id,
+      )
       if (!r || r.status !== 'running') return
       try {
         await close(r, status, log, now, '')
       } catch (error) {
-        if ((await find('SELECT * FROM deployments WHERE id=?', id))?.status === 'running')
+        if (
+          (
+            await find(
+              'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.id=?',
+              id,
+            )
+          )?.status === 'running'
+        )
           throw error
       }
     },
@@ -193,13 +217,16 @@ export const createDeploymentD1Dao = (db: D1Database): DeploymentDao => {
       (
         await db
           .prepare(
-            "SELECT * FROM deployments WHERE status='running' AND started_at<=? ORDER BY started_at,id",
+            "SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.status='running' AND x.started_at<=? ORDER BY x.started_at,x.id",
           )
           .bind(startedBefore)
           .all<Row>()
       ).results.map(toDeploymentRecord),
     abandon: async ({ id, phase, executedCount, log, now }) => {
-      const r = await find('SELECT * FROM deployments WHERE id=?', id)
+      const r = await find(
+        'SELECT x.*, u.name AS executed_by_name FROM deployments x JOIN users u ON u.id=x.executed_by WHERE x.id=?',
+        id,
+      )
       if (!r || r.status !== 'running') return false
       try {
         await close(

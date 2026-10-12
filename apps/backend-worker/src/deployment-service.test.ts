@@ -1,6 +1,7 @@
 import { createDeploymentMemoryDao } from 'backend/src/dao/deployment.memory.ts'
 import { createMemoryDb, memoryTable } from 'backend/src/dao/memory-db.ts'
 import { memberKey } from 'backend/src/dao/product.memory.ts'
+import { createUserMemoryDao } from 'backend/src/dao/user.memory.ts'
 import type { ConnectionRepository } from 'backend/src/repository/connection.repository.ts'
 import { createDeploymentRepository } from 'backend/src/repository/deployment.repository.ts'
 import type { ObjectRepository } from 'backend/src/repository/object.repository.ts'
@@ -30,6 +31,7 @@ test('receipt freezes SQL once, returns same receipt on resend and protects mism
     revision: 1,
     deletedAt: null,
   })
+  memoryTable(db, 'users').set('u1', { id: 'u1', name: '実行したユーザー', deletedAt: null })
   memoryTable(db, 'product_members').set(memberKey(context.productId, 'u1'), { role: 'owner' })
   memoryTable(db, 'databases').set(context.version.databaseId, {
     id: context.version.databaseId,
@@ -73,6 +75,7 @@ test('receipt freezes SQL once, returns same receipt on resend and protects mism
       idempotencyKey: crypto.randomUUID(),
     }
   const first = await service.accept(input)
+  expect(first.executedByName).toBe('実行したユーザー')
   expect(first.phase).toBe('queued')
   expect(await service.accept(input)).toEqual(first)
   expect(putOnce).toHaveBeenCalledTimes(2)
@@ -94,4 +97,22 @@ test('receipt freezes SQL once, returns same receipt on resend and protects mism
       }).preview(input)
     ).canExecute,
   ).toBe(false)
+  memoryTable(db, 'product_members').delete(memberKey(context.productId, 'u1'))
+  memoryTable(db, 'product_members').set(memberKey(context.productId, 'u2'), { role: 'owner' })
+  expect(await service.get({ userId: 'u2', deploymentId: first.id })).toMatchObject({
+    executedBy: 'u1',
+    executedByName: '実行したユーザー',
+  })
+  await expect(service.get({ userId: 'u1', deploymentId: first.id })).rejects.toMatchObject({
+    code: 'not_found',
+  })
+  await createUserMemoryDao(db).withdraw({
+    userId: 'u1',
+    name: '実行したユーザー',
+    anonymizedName: '退会したユーザー',
+    now: 5000,
+  })
+  expect(await service.get({ userId: 'u2', deploymentId: first.id })).toMatchObject({
+    executedByName: '退会したユーザー',
+  })
 })

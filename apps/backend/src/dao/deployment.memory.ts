@@ -1,9 +1,20 @@
 import { AppError } from '../error.ts'
 import type { ConnectionRecord } from './connection.interface.ts'
 import type { DatabaseRecord, VersionRecord } from './database.interface.ts'
-import type { DeploymentDao, DeploymentRecord } from './deployment.interface.ts'
+import type {
+  DeploymentDao,
+  DeploymentReadRecord,
+  DeploymentRecord,
+} from './deployment.interface.ts'
 import { atomic, memoryTable, appendAuditLog, type MemoryDb } from './memory-db.ts'
 import { memoryVersionContext } from './object.memory.ts'
+import type { UserRecord } from './user.interface.ts'
+
+const withExecutor = (db: MemoryDb, record: DeploymentRecord): DeploymentReadRecord => ({
+  ...record,
+  executedByName:
+    memoryTable<UserRecord>(db, 'users').get(record.executedBy)?.name ?? '不明なユーザー',
+})
 import {
   assertActorRole,
   bumpProductRevision,
@@ -15,7 +26,7 @@ export const memoryDeployments = (db: MemoryDb, databaseId: string) =>
   [...memoryTable<DeploymentRecord>(db, 'deployments').values()]
     .filter((v) => v.databaseId === databaseId)
     .toSorted((a, b) => b.startedAt - a.startedAt || b.id.localeCompare(a.id))
-    .map((v) => ({ ...v }))
+    .map((v) => withExecutor(db, v))
 export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
   const rows = () => memoryTable<DeploymentRecord>(db, 'deployments')
   const close = closeDeployment(db)
@@ -33,17 +44,17 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
   return {
     findById: async (id) => {
       const r = rows().get(id)
-      return r ? { ...r } : null
+      return r ? withExecutor(db, r) : null
     },
     findByKey: async (id, key) => {
       const r = [...rows().values()].find((v) => v.connectionId === id && v.idempotencyKey === key)
-      return r ? { ...r } : null
+      return r ? withExecutor(db, r) : null
     },
     listByVersion: async (versionId) =>
       [...rows().values()]
         .filter((r) => r.toVersionId === versionId)
         .toSorted((a, b) => b.startedAt - a.startedAt || b.id.localeCompare(a.id))
-        .map((r) => ({ ...r })),
+        .map((r) => withExecutor(db, r)),
     findForMember: async (id, userId) => {
       const r = rows().get(id)
       const context = r ? memoryVersionContext(db, r.toVersionId) : null
@@ -51,7 +62,7 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
         ? memoryTable<MemberRow>(db, 'product_members').get(memberKey(r.productId, userId))
         : undefined
       return r && context && context.productId === r.productId && member
-        ? { record: { ...r }, role: member.role }
+        ? { record: withExecutor(db, r), role: member.role }
         : null
     },
     accept: async ({ record: r, userId, allowedRoles, connectionUpdatedAt, audit }) =>
@@ -113,7 +124,7 @@ export const createDeploymentMemoryDao = (db: MemoryDb): DeploymentDao => {
       [...rows().values()]
         .filter((r) => r.status === 'running' && r.startedAt <= startedBefore)
         .toSorted((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
-        .map((r) => ({ ...r })),
+        .map((r) => withExecutor(db, r)),
     abandon: async ({ id, phase, executedCount, log, now }) =>
       atomic(db, () => {
         const r = rows().get(id)

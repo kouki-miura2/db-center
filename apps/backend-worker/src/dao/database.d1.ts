@@ -151,12 +151,12 @@ export const createDatabaseD1Dao = (db: D1Database): DatabaseDao => ({
         ? [
             db
               .prepare(
-                `SELECT x.* FROM databases d JOIN deployments x ON x.database_id = d.id AND x.revision > ?2 WHERE d.id = ?1 AND ${DEPLOYMENTS_DELTA} ORDER BY x.started_at DESC, x.id DESC`,
+                `SELECT x.*, u.name AS executed_by_name FROM databases d JOIN deployments x ON x.database_id = d.id AND x.revision > ?2 JOIN users u ON u.id = x.executed_by WHERE d.id = ?1 AND ${DEPLOYMENTS_DELTA} ORDER BY x.started_at DESC, x.id DESC`,
               )
               .bind(databaseId, since),
             db
               .prepare(
-                `SELECT x.* FROM databases d JOIN deployments x ON x.database_id = d.id WHERE d.id = ?1 AND NOT (${DEPLOYMENTS_DELTA}) ORDER BY x.started_at DESC, x.id DESC`,
+                `SELECT x.*, u.name AS executed_by_name FROM databases d JOIN deployments x ON x.database_id = d.id JOIN users u ON u.id = x.executed_by WHERE d.id = ?1 AND NOT (${DEPLOYMENTS_DELTA}) ORDER BY x.started_at DESC, x.id DESC`,
               )
               .bind(databaseId, since),
           ]

@@ -1,6 +1,6 @@
-import type { DeploymentDao, DeploymentRecord } from '../dao/deployment.interface.ts'
+import type { DeploymentDao, DeploymentReadRecord } from '../dao/deployment.interface.ts'
 
-export const deploymentView = (r: DeploymentRecord) => ({
+export const deploymentView = (r: DeploymentReadRecord) => ({
   id: r.id,
   connectionId: r.connectionId,
   connectionName: r.connectionId === null ? `${r.connectionName}（削除済み）` : r.connectionName,
@@ -11,6 +11,7 @@ export const deploymentView = (r: DeploymentRecord) => ({
   status: r.status,
   phase: r.phase,
   executedBy: r.executedBy,
+  executedByName: r.executedByName,
   startedAt: r.startedAt,
   finishedAt: r.finishedAt,
   executedCount: r.executedCount,

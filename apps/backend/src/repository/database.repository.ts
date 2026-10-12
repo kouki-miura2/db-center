@@ -18,13 +18,13 @@ export interface Database {
 
 export type Version = VersionRecord
 
-import type { DeploymentRecord } from '../dao/deployment.interface.ts'
+import type { DeploymentReadRecord } from '../dao/deployment.interface.ts'
 export interface DatabaseScope {
   database: Database
   /** The common column set, in order; empty if none is defined. */
   commonColumns: unknown[]
   versions: Version[]
-  deployments?: DeploymentRecord[]
+  deployments?: DeploymentReadRecord[]
 }
 
 export type DatabaseSummary = Omit<DatabaseSummaryRecord, 'database'> & { database: Database }

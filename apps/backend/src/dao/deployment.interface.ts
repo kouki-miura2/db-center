@@ -25,16 +25,19 @@ export interface DeploymentRecord {
   executedCount: number
   /**
    * The database scope's revision when this row last changed (accepted, ended, or its connection
-   * deleted), so the scope can return only the rows changed since a client's revision. Set by
-   * the DAO; ignored on `accept`.
+   * deleted, or its executor withdrawn), so the scope can return only the rows changed since a
+   * client's revision. Set by the DAO; ignored on `accept`.
    */
   revision: number
 }
+/** A read joins the executor's user row, independently of current product membership. */
+export type DeploymentReadRecord = DeploymentRecord & { executedByName: string }
+
 export interface DeploymentDao {
-  findById: (id: string) => Promise<DeploymentRecord | null>
-  findByKey: (connectionId: string, key: string) => Promise<DeploymentRecord | null>
+  findById: (id: string) => Promise<DeploymentReadRecord | null>
+  findByKey: (connectionId: string, key: string) => Promise<DeploymentReadRecord | null>
   /** A version's deployments, newest first. */
-  listByVersion: (versionId: string) => Promise<DeploymentRecord[]>
+  listByVersion: (versionId: string) => Promise<DeploymentReadRecord[]>
   /**
    * A deployment and the role of `userId` in its product, read together, or null unless its
    * version, database and product exist and aren't deleted and the user is a member.
@@ -42,7 +45,7 @@ export interface DeploymentDao {
   findForMember: (
     id: string,
     userId: string,
-  ) => Promise<{ record: DeploymentRecord; role: Role } | null>
+  ) => Promise<{ record: DeploymentReadRecord; role: Role } | null>
   accept: (input: {
     record: DeploymentRecord
     userId: string

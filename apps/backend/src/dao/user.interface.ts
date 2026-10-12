@@ -50,6 +50,7 @@ export interface UserDao {
    * Withdraws the user ("各論 > Googleでログイン > 退会"): leaves every product they're a manager or
    * member of (bumping its revision, with a `leave` audit log entry summarized as `name`), deletes
    * all their sessions, clears the Google account ID and email and renames them `anonymizedName`.
+   * Bumps the database and deployment revisions of their histories so caches anonymize the name.
    * Throws `stale_update` if they own a product that isn't deleted, or are already withdrawn.
    */
   withdraw: (input: {

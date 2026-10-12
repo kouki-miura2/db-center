@@ -118,6 +118,17 @@ export const createUserD1Dao = (db: D1Database): UserDao => ({
       db.prepare(`UPDATE products SET revision = revision + 1 WHERE id IN (${left})`).bind(userId),
       db.prepare("DELETE FROM product_members WHERE user_id = ? AND role <> 'owner'").bind(userId),
       db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+      // Anonymization changes history responses, including products the user already left.
+      db
+        .prepare(
+          'UPDATE databases SET revision = revision + 1 WHERE id IN (SELECT database_id FROM deployments WHERE executed_by = ?)',
+        )
+        .bind(userId),
+      db
+        .prepare(
+          'UPDATE deployments SET revision = (SELECT revision FROM databases WHERE id = deployments.database_id) WHERE executed_by = ?',
+        )
+        .bind(userId),
       db
         .prepare(
           'UPDATE users SET google_sub = NULL, email = NULL, name = ?, deleted_at = ? WHERE id = ? AND deleted_at IS NULL',

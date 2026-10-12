@@ -1,5 +1,7 @@
 import { expect, test } from 'vite-plus/test'
 
+import { deploymentView } from '../repository/deployment.repository.ts'
+import type { DatabaseDao } from './database.interface.ts'
 import type { DeploymentDao, DeploymentRecord } from './deployment.interface.ts'
 
 export const deploymentRecord = (): DeploymentRecord => ({
@@ -33,6 +35,9 @@ export const deploymentDaoContract = (
     revision: () => Promise<number>
     changeVersion: () => Promise<void>
     markDatabaseDeleted: () => Promise<void>
+    removeExecutor: () => Promise<void>
+    withdrawExecutor: () => Promise<void>
+    databaseScope: DatabaseDao['findScope']
   }>,
 ) => {
   const accept = (dao: DeploymentDao, record: DeploymentRecord) =>
@@ -51,6 +56,39 @@ export const deploymentDaoContract = (
         createdAt: 1000,
       },
     })
+  test('history keeps executor names after membership removal, and anonymizes withdrawal in deltas', async () => {
+    const f = await setup(),
+      r = deploymentRecord()
+    await accept(f.dao, r)
+    const checkName = async (name: string) => {
+      const record = (await f.dao.findById(r.id))!
+      expect(deploymentView(record)).toMatchObject({ executedBy: 'u1', executedByName: name })
+      expect(await f.dao.findByKey('c1', r.idempotencyKey)).toMatchObject({ executedByName: name })
+      expect(await f.dao.listByVersion('v1')).toEqual([
+        expect.objectContaining({ executedByName: name }),
+      ])
+      expect(await f.dao.findForMember(r.id, 'u2')).toMatchObject({
+        record: { executedByName: name },
+      })
+      const scope = await f.databaseScope('p1', 'd1', { deployments: {} })
+      expect(scope?.deployments).toEqual([expect.objectContaining({ executedByName: name })])
+    }
+    await f.removeExecutor()
+    await checkName('user')
+    expect(await f.dao.findForMember(r.id, 'u1')).toBeNull()
+    const before = await f.revision()
+    await f.withdrawExecutor()
+    await checkName('退会したユーザー')
+    expect(await f.revision()).toBe(before + 1)
+    const delta = await f.databaseScope('p1', 'd1', { deployments: { since: before } })
+    expect(delta?.deployments).toEqual([
+      expect.objectContaining({
+        id: r.id,
+        executedByName: '退会したユーザー',
+        revision: before + 1,
+      }),
+    ])
+  })
   test('competing receipt is atomic and a key resolves to the original execution', async () => {
     const f = await setup(),
       r = deploymentRecord(),

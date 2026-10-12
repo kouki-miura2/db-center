@@ -3,9 +3,11 @@ import { deploymentView } from 'backend/src/repository/deployment.repository.ts'
 import { afterEach, expect, test } from 'vite-plus/test'
 
 import { createConnectionD1Dao } from './connection.d1.ts'
+import { createDatabaseD1Dao } from './database.d1.ts'
 import { createDeploymentD1Dao } from './deployment.d1.ts'
 import { createObjectD1Dao } from './object.d1.ts'
 import { createTestD1 } from './test-d1.ts'
+import { createUserD1Dao } from './user.d1.ts'
 import { createVersionD1Dao } from './version.d1.ts'
 let dispose: (() => Promise<void>) | undefined
 afterEach(() => dispose?.())
@@ -16,6 +18,9 @@ const setup = async () => {
   await db.batch([
     db.prepare(
       "INSERT INTO users(id,name,terms_version,agreed_at,last_login_at,created_at) VALUES('u1','user','v',0,0,0)",
+    ),
+    db.prepare(
+      "INSERT INTO users(id,name,terms_version,agreed_at,last_login_at,created_at) VALUES('u2','reader','v',0,0,0)",
     ),
     db.prepare(
       "INSERT INTO products(id,name,target,created_at,updated_at) VALUES('p1','product','postgresql18',1000,1000)",
@@ -32,6 +37,20 @@ const setup = async () => {
     ),
   ])
   return {
+    databaseScope: createDatabaseD1Dao(db).findScope,
+    removeExecutor: async () => {
+      await db.batch([
+        db.prepare("DELETE FROM product_members WHERE product_id='p1' AND user_id='u1'"),
+        db.prepare("INSERT INTO product_members VALUES('p1','u2','owner',1000)"),
+      ])
+    },
+    withdrawExecutor: () =>
+      createUserD1Dao(db).withdraw({
+        userId: 'u1',
+        name: 'user',
+        anonymizedName: '退会したユーザー',
+        now: 5000,
+      }),
     db,
     dao: createDeploymentD1Dao(db),
     audits: async () =>
