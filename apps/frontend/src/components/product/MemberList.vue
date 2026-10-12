@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { formatDate, isAllowed, LIMITS } from 'utils'
+import { formatDate, isAllowed, LIMITS, ROLE_LABELS } from 'utils'
 import { computed, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 
 import { succeeded } from '../../api/call.ts'
 import { useMemberMutations } from '../../composables/useMemberMutations.ts'
@@ -12,9 +13,15 @@ import { useNotificationStore } from '../../stores/notification.ts'
 import OperationError from '../common/OperationError.vue'
 import RoleChip from '../common/RoleChip.vue'
 
-const props = defineProps<{ productId: string; data: ProductData }>()
+const props = defineProps<{
+  productId: string
+  data: ProductData
+  detailed?: boolean
+  showInvite?: boolean
+}>()
 const actions = useMemberMutations(props.productId)
 const auth = useAuthStore()
+const { xs } = useDisplay()
 const online = useOnline()
 const notification = useNotificationStore()
 const members = computed(() => sortMembers(props.data.members))
@@ -65,105 +72,107 @@ const copy = async () => {
 }
 </script>
 <template>
-  <v-card>
-    <v-card-title class="d-flex align-center ga-2"
-      ><v-icon size="20">mdi-account-group-outline</v-icon>参加者
-      <span class="text-caption text-medium-emphasis"
+  <v-card :class="['participants-card', { 'members-detailed': detailed && !xs }]">
+    <div class="member-title d-flex align-center ga-2">
+      <h2 class="text-body-2 font-weight-bold">参加者</h2>
+      <span v-if="!detailed" class="font-mono screen-caption"
         >{{ data.members.length + data.invitations.length }} / {{ LIMITS.membersPerProduct }}</span
-      ><v-spacer /><v-btn
-        v-if="isAllowed(data.role, 'inviteOrRemoveMember')"
+      >
+      <v-spacer />
+      <v-btn
+        v-if="showInvite !== false && isAllowed(data.role, 'inviteOrRemoveMember')"
         :to="{ name: 'product-invite', params: { productId } }"
         variant="text"
         color="primary"
         size="small"
+        prepend-icon="mdi-account-plus-outline"
         :disabled="!online"
         >招待する</v-btn
-      ></v-card-title
-    >
-    <v-card-text><OperationError :error="error" /></v-card-text>
-    <v-list class="pt-0">
-      <v-list-item
-        v-for="member in members"
-        :key="member.userId"
-        :title="member.name"
-        :subtitle="`参加 ${formatDate(new Date(member.joinedAt), 'yyyy/MM/dd')}`"
       >
-        <template #prepend
-          ><v-avatar color="primary-soft" size="32" class="text-primary mr-3">{{
-            [...member.name][0]
-          }}</v-avatar></template
-        >
-        <template #append
-          ><RoleChip :role="member.role" />
-          <v-menu v-if="Object.values(permissions(member)).some(Boolean)">
-            <template #activator="{ props: activator }"
-              ><v-btn
-                v-bind="activator"
-                icon="mdi-dots-vertical"
-                variant="text"
-                size="small"
-                :disabled="!online || pending"
-                :aria-label="`${member.name}の操作`"
-            /></template>
-            <v-list density="compact">
-              <v-list-item
-                v-if="permissions(member).promote"
-                title="マネージャーに変更"
-                @click="
-                  succeeded(
-                    actions.changeRole.mutateAsync({ userId: member.userId, role: 'manager' }),
-                  )
-                "
-              />
-              <v-list-item
-                v-if="permissions(member).demote"
-                title="メンバーに変更"
-                @click="
-                  succeeded(
-                    actions.changeRole.mutateAsync({ userId: member.userId, role: 'member' }),
-                  )
-                "
-              />
-              <v-list-item
-                v-if="permissions(member).transfer"
-                title="オーナーを譲渡"
-                @click="confirmation = { kind: 'transfer', member }"
-              />
-              <v-list-item
-                v-if="permissions(member).remove"
-                title="プロダクトから除外"
-                base-color="error"
-                @click="confirmation = { kind: 'remove', member }"
-              />
-            </v-list>
-          </v-menu>
-        </template>
-      </v-list-item>
-      <v-divider v-if="data.invitations.length" />
-      <v-list-item
-        v-for="invitation in data.invitations"
-        :key="invitation.id"
-        :title="invitation.email"
-        :subtitle="`期限 ${formatDate(new Date(invitation.expiresAt), 'yyyy/MM/dd HH:mm')}`"
+    </div>
+    <OperationError v-if="error" :error="error" class="mx-4" />
+    <div v-for="member in members" :key="member.userId" class="member-row">
+      <v-avatar v-if="!detailed || xs" size="28" :class="'member-avatar avatar-' + member.role">{{
+        [...member.name][0]
+      }}</v-avatar>
+      <span class="member-name">{{ member.name }}</span>
+      <span v-if="detailed && !xs" class="font-mono screen-caption"
+        >参加 {{ formatDate(new Date(member.joinedAt), 'yyyy/MM/dd') }}</span
       >
-        <template #append
-          ><v-chip color="warning">仮登録</v-chip
+      <RoleChip v-if="detailed" :role="member.role" /><span
+        v-else
+        :class="'member-role role-text-' + member.role"
+        >{{ ROLE_LABELS[member.role] }}</span
+      >
+      <span v-if="detailed && !xs" class="member-status">参加完了</span>
+      <v-menu v-if="Object.values(permissions(member)).some(Boolean)">
+        <template #activator="{ props: activator }"
           ><v-btn
-            v-if="
-              isAllowed(
-                data.role,
-                invitation.role === 'manager' ? 'inviteOrRemoveManager' : 'inviteOrRemoveMember',
-              )
-            "
+            v-bind="activator"
+            icon="mdi-dots-vertical"
             variant="text"
             size="small"
-            :disabled="!online || pending || invitation.expiresAt <= Date.now()"
-            @click="showCode(invitation.id)"
-            >コード表示</v-btn
-          ></template
-        >
-      </v-list-item>
-    </v-list>
+            :disabled="!online || pending"
+            :aria-label="`${member.name}の操作`"
+        /></template>
+        <v-list density="compact">
+          <v-list-item
+            v-if="permissions(member).promote"
+            title="マネージャーに変更"
+            @click="
+              succeeded(actions.changeRole.mutateAsync({ userId: member.userId, role: 'manager' }))
+            "
+          />
+          <v-list-item
+            v-if="permissions(member).demote"
+            title="メンバーに変更"
+            @click="
+              succeeded(actions.changeRole.mutateAsync({ userId: member.userId, role: 'member' }))
+            "
+          />
+          <v-list-item
+            v-if="permissions(member).transfer"
+            title="オーナーを譲渡"
+            @click="confirmation = { kind: 'transfer', member }"
+          />
+          <v-list-item
+            v-if="permissions(member).remove"
+            title="プロダクトから除外"
+            base-color="error"
+            @click="confirmation = { kind: 'remove', member }"
+          />
+        </v-list>
+      </v-menu>
+    </div>
+    <div
+      v-for="invitation in data.invitations"
+      :key="invitation.id"
+      class="member-row invitation-member"
+    >
+      <v-avatar v-if="!detailed || xs" size="28" color="grey-lighten-4"
+        ><v-icon size="16">mdi-email-outline</v-icon></v-avatar
+      >
+      <span class="member-name font-mono text-caption text-break">{{ invitation.email }}</span>
+      <span v-if="detailed && !xs" class="screen-caption"
+        >期限 {{ formatDate(new Date(invitation.expiresAt), 'yyyy/MM/dd HH:mm') }}</span
+      >
+      <RoleChip :role="invitation.role" />
+      <span v-if="detailed && !xs" class="member-status pending">● 仮登録</span>
+      <v-btn
+        v-if="
+          isAllowed(
+            data.role,
+            invitation.role === 'manager' ? 'inviteOrRemoveManager' : 'inviteOrRemoveMember',
+          )
+        "
+        variant="text"
+        size="x-small"
+        :disabled="!online || pending || invitation.expiresAt <= Date.now()"
+        aria-label="招待コードを再表示"
+        @click="showCode(invitation.id)"
+        ><v-icon size="16">mdi-key-outline</v-icon></v-btn
+      >
+    </div>
   </v-card>
   <v-dialog
     :model-value="!!confirmation"

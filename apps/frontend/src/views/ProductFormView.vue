@@ -3,10 +3,12 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { isAllowed, LIMITS, TARGETS, type Target } from 'utils'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 import { succeeded } from '../api/call.ts'
 import { scopeKeys, type Scope } from '../cache/scope.ts'
 import DeleteDialog from '../components/common/DeleteDialog.vue'
+import FormField from '../components/common/FormField.vue'
 import OperationError from '../components/common/OperationError.vue'
 import ConnectionFields from '../components/product/ConnectionFields.vue'
 import { useOnline } from '../composables/useOnline.ts'
@@ -28,6 +30,7 @@ import { useNotificationStore } from '../stores/notification.ts'
 
 const props = defineProps<{ productId?: string }>()
 const editing = !!props.productId
+const { xs } = useDisplay()
 const client = useQueryClient()
 const query = useProductQuery(props.productId ?? '')
 // Creation has no product scope to read yet.
@@ -171,13 +174,15 @@ const confirmDelete = async (confirmationName: string) => {
 }
 </script>
 <template>
-  <v-container class="page form-page">
-    <h1 class="text-h5 font-weight-bold mb-2">
-      {{ editing ? 'プロダクトを編集' : 'プロダクトを登録' }}
-    </h1>
-    <p class="text-body-2 text-medium-emphasis mb-6">
-      プロダクトごとにデータベース設計と参加者を管理します。
-    </p>
+  <v-container class="page form-page design-screen">
+    <router-link
+      v-if="!xs"
+      :to="editing ? { name: 'product', params: { productId } } : { name: 'products' }"
+      class="screen-back"
+      ><v-icon size="16">mdi-arrow-left</v-icon
+      >{{ editing ? 'データベース一覧' : 'プロダクト一覧' }}</router-link
+    >
+    <h1 v-if="!xs" class="screen-title">{{ editing ? 'プロダクト設定' : 'プロダクトを登録' }}</h1>
     <OperationError :error="error ?? (editing ? query.error.value : null)" @reload="reload" />
     <v-progress-linear v-if="editing && query.isPending.value" indeterminate />
     <v-alert
@@ -187,71 +192,99 @@ const confirmDelete = async (confirmationName: string) => {
       text="プロダクトを編集する権限がありません"
     />
     <v-form v-else v-model="valid" @submit.prevent="save">
-      <v-card class="mb-5"
-        ><v-card-text class="pa-5">
-          <h2 class="text-subtitle-1 font-weight-bold mb-4">基本情報</h2>
-          <v-text-field
-            v-model="name"
-            label="プロダクト名 *"
-            :rules="[required, maxLength(LIMITS.productNameMaxLength)]"
-            :error-messages="fieldError(error, 'name')"
-            :disabled="!online || saving || !!createdId"
-          />
-          <v-select
-            v-model="target"
-            :items="Object.entries(TARGETS).map(([value, item]) => ({ value, title: item.label }))"
-            label="ターゲット *"
-            :disabled="editing || !online || saving || !!createdId"
-            hint="登録後はターゲットを変更できません"
-            persistent-hint
-          /> </v-card-text
-      ></v-card>
-      <v-card v-if="target === 'postgresql18'" class="mb-5"
-        ><v-card-text class="pa-5"
-          ><ConnectionFields
-            v-model="rows"
-            :disabled="!online || saving"
-            :error="error"
-            :error-key="errorKey"
-            @remove="removeConnection" /></v-card-text
-      ></v-card>
+      <v-card class="form-card">
+        <h2 v-if="!editing && !xs" class="form-card-title">基本情報</h2>
+        <div class="basic-fields">
+          <FormField v-slot="{ id }" label="プロダクト名" required
+            ><v-text-field
+              :id="id"
+              v-model="name"
+              :rules="[required, maxLength(LIMITS.productNameMaxLength)]"
+              :error-messages="fieldError(error, 'name')"
+              :disabled="!online || saving || !!createdId"
+              hide-details="auto"
+          /></FormField>
+          <FormField
+            :class="{ 'readonly-target': editing }"
+            label="ターゲット"
+            :required="!editing"
+            :hint="xs && !editing ? '登録後に変更できません' : undefined"
+          >
+            <template #default="{ id }"
+              ><div v-if="editing" class="locked-target font-mono">
+                <v-icon size="16" color="grey">mdi-lock-outline</v-icon>{{ TARGETS[target].label }}
+              </div>
+              <v-select
+                v-else
+                :id="id"
+                v-model="target"
+                :items="
+                  Object.entries(TARGETS).map(([value, item]) => ({ value, title: item.label }))
+                "
+                class="font-mono"
+                :disabled="!online || saving || !!createdId"
+                hide-details="auto"
+            /></template>
+          </FormField>
+        </div>
+        <p v-if="!editing && !xs" class="field-hint">ターゲットは登録後に変更できません</p>
+      </v-card>
+      <v-card v-if="target === 'postgresql18'" class="form-card"
+        ><ConnectionFields
+          v-model="rows"
+          :disabled="!online || saving"
+          :error="error"
+          :error-key="errorKey"
+          @remove="removeConnection"
+      /></v-card>
       <v-alert v-if="createdId && error" type="warning" variant="tonal" class="mb-4"
         >プロダクトの登録は完了しています。接続情報を修正して再度保存すると、続きから登録します。</v-alert
       >
-      <div class="d-flex justify-end ga-2">
+      <div :class="xs ? 'mobile-actions' : 'form-actions'">
         <v-btn
+          v-if="!xs"
           :to="editing ? { name: 'product', params: { productId } } : { name: 'products' }"
-          variant="outlined"
+          variant="text"
           :disabled="saving"
           >キャンセル</v-btn
-        ><v-btn
+        >
+        <v-btn
           type="submit"
           color="primary"
           :loading="saving"
           :disabled="!online || !valid || !canEdit"
-          >{{ editing ? '変更を保存' : createdId ? '接続情報の登録を続ける' : '登録する' }}</v-btn
+          >{{ editing ? '保存する' : createdId ? '接続情報の登録を続ける' : '登録する' }}</v-btn
         >
       </div>
     </v-form>
-    <v-card v-if="editing && query.data.value?.data.role === 'owner'" class="mt-8" border="error sm"
-      ><v-card-text>
-        <h2 class="text-subtitle-1 font-weight-bold text-error mb-2">プロダクトの削除</h2>
-        <p class="text-body-2 mb-4">すべてのデータベース・設計・接続情報が削除されます。</p>
-        <v-btn
-          color="error"
-          variant="outlined"
-          :disabled="!online || saving"
-          @click="deleting = true"
-          >プロダクトを削除</v-btn
-        >
-      </v-card-text></v-card
+    <v-card
+      v-if="editing && query.data.value?.data.role === 'owner'"
+      class="delete-product"
+      border="error sm"
     >
+      <div>
+        <h2 class="text-body-2 font-weight-bold text-error mb-1">プロダクトを削除</h2>
+        <p class="screen-caption">
+          データベースと設計を含む、プロダクト内のすべてのデータが削除されます。
+        </p>
+      </div>
+      <v-btn color="error" variant="outlined" :disabled="!online || saving" @click="deleting = true"
+        ><v-icon v-if="xs" start size="16">mdi-delete-outline</v-icon
+        >{{ xs ? 'プロダクトを削除' : '削除する' }}</v-btn
+      >
+    </v-card>
     <DeleteDialog
       v-if="deleting && savedProduct"
       v-model="deleting"
       kind="プロダクト"
       :name="savedProduct.name"
-      :detail="`データベース ${query.data.value?.data.databases.length ?? 0}件、参加者 ${query.data.value?.data.members.length ?? 0}名と配下のデータを削除します。`"
+      :detail="
+        'データベース ' +
+        (query.data.value?.data.databases.length ?? 0) +
+        '件、参加者 ' +
+        (query.data.value?.data.members.length ?? 0) +
+        '名と配下のデータを削除します。'
+      "
       :pending="mutation.remove.isPending.value"
       :error="mutation.remove.error.value"
       @confirm="confirmDelete"

@@ -22,10 +22,10 @@ const more = (visible: boolean) => {
 }
 </script>
 <template>
-  <v-container class="page"
+  <v-container class="page design-screen"
     ><div class="d-flex align-center mb-6 ga-3">
       <div>
-        <h1 class="text-h5 font-weight-bold">操作履歴</h1>
+        <h1 class="screen-title">操作履歴</h1>
         <p class="text-body-2 text-medium-emphasis mt-2">
           {{ product.data.value?.data.product.name }}
         </p>

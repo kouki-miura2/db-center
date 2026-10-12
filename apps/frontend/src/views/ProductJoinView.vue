@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 import { ApiError } from '../api/call.ts'
 import OperationError from '../components/common/OperationError.vue'
@@ -12,6 +13,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const online = useOnline()
 const passcode = ref('')
+const { xs } = useDisplay()
 const acceptable = computed(() => /^[a-z0-9]{8}$/i.test(passcode.value.trim()))
 const blocked = computed(
   () =>
@@ -29,40 +31,42 @@ const join = async () => {
 }
 </script>
 <template>
-  <v-container class="page join-page"
-    ><h1 class="text-h5 font-weight-bold mb-2">プロダクトに参加</h1>
-    <p class="text-body-2 text-medium-emphasis mb-6">
-      招待された8桁のパスコードを入力してください。
-    </p>
-    <v-card
-      ><v-card-text class="pa-6"
-        ><OperationError :error="mutation.join.error.value" /><v-chip
-          prepend-icon="mdi-account-outline"
-          class="mb-5"
-          >{{ auth.user?.email }}</v-chip
-        ><v-form @submit.prevent="join"
-          ><v-text-field
-            v-model="passcode"
-            label="パスコード"
-            class="font-mono"
-            autocomplete="off"
-            autocapitalize="characters"
-            spellcheck="false"
-            maxlength="8"
-            :disabled="!online || mutation.join.isPending.value || blocked"
-            hint="大文字・小文字は区別しません。貼り付けもできます"
-            persistent-hint
-          /><v-btn
+  <v-container class="page join-page design-screen">
+    <v-card class="join-card">
+      <div class="join-icon"><v-icon size="24">mdi-key-outline</v-icon></div>
+      <h1 class="screen-title">{{ xs ? 'パスコードを入力' : 'プロダクトに参加' }}</h1>
+      <p class="screen-caption mt-3">招待した方から受け取った8桁のパスコードを入力してください。</p>
+      <v-form @submit.prevent="join">
+        <v-otp-input
+          v-model="passcode"
+          :length="8"
+          type="text"
+          :pattern="/^[a-z0-9]*$/i"
+          label="パスコード"
+          class="font-mono"
+          :disabled="!online || mutation.join.isPending.value || blocked"
+        />
+        <p class="screen-caption">
+          {{
+            xs
+              ? passcode.length + ' / 8 文字 ・ 貼り付け可'
+              : '英数字・大文字小文字を区別しません／貼り付け可'
+          }}
+        </p>
+        <p class="screen-caption mt-2 text-break">参加するアカウント：{{ auth.user?.email }}</p>
+        <div :class="xs ? 'mobile-actions flex-column' : 'mt-6'">
+          <v-btn
             type="submit"
             color="primary"
             block
-            class="mt-6"
             :disabled="!online || !acceptable || blocked"
             :loading="mutation.join.isPending.value"
             >参加する</v-btn
-          ></v-form
-        ></v-card-text
-      ></v-card
-    >
+          >
+          <p v-if="xs" class="text-center screen-caption">8文字入力すると押せるようになります</p>
+        </div>
+        <OperationError class="mt-5" :error="mutation.join.error.value" />
+      </v-form>
+    </v-card>
   </v-container>
 </template>

@@ -12,6 +12,7 @@ import WithdrawDialog from './WithdrawDialog.vue'
 const props = defineProps<{
   /** The screen's name after "プロダクト". */
   crumb?: string
+  mobileTitle?: string
   /** Where the back button of the compact bar goes. */
   back?: RouteLocationRaw
 }>()
@@ -31,7 +32,7 @@ const leave = async () => {
 
 <template>
   <v-app-bar flat border="b" height="56" color="surface">
-    <div class="d-flex align-center ga-3 px-4 w-100">
+    <div class="app-bar-content d-flex align-center ga-3 w-100">
       <template v-if="xs">
         <v-btn
           v-if="props.back"
@@ -39,30 +40,44 @@ const leave = async () => {
           icon="mdi-arrow-left"
           variant="text"
           size="small"
+          aria-label="前の画面に戻る"
         />
         <div v-else class="app-logo">db</div>
         <span class="text-subtitle-2 font-weight-bold text-truncate flex-grow-1">
-          {{ props.crumb ?? 'db-center' }}
+          {{ props.mobileTitle ?? props.crumb ?? 'db-center' }}
         </span>
       </template>
       <template v-else>
-        <router-link :to="{ name: 'products' }" class="d-flex align-center ga-2 text-high-emphasis">
-          <div class="app-logo">db</div>
-          <span class="text-subtitle-2 font-weight-bold">db-center</span>
-        </router-link>
+        <router-link :to="{ name: 'products' }" class="app-brand d-flex align-center ga-2"
+          ><div class="app-logo">db</div>
+          <span>db-center</span></router-link
+        >
         <v-divider vertical class="my-4" />
-        <v-breadcrumbs density="compact" class="text-body-2 pa-0 flex-grow-1">
-          <v-breadcrumbs-item :to="{ name: 'products' }" prepend-icon="mdi-folder-open-outline">
-            プロダクト
-          </v-breadcrumbs-item>
-          <template v-if="props.crumb">
-            <v-breadcrumbs-divider icon="mdi-chevron-right" />
-            <v-breadcrumbs-item class="text-high-emphasis font-weight-medium">
-              {{ props.crumb }}
-            </v-breadcrumbs-item>
-          </template>
-        </v-breadcrumbs>
+        <div class="app-crumbs d-flex align-center ga-3 flex-grow-1">
+          <router-link :to="{ name: 'products' }" class="d-flex align-center ga-2"
+            ><v-icon size="18">mdi-folder-open-outline</v-icon>プロダクト</router-link
+          >
+          <template v-if="props.crumb"
+            ><v-icon size="16" color="grey">mdi-chevron-right</v-icon
+            ><span class="text-truncate">{{ props.crumb }}</span></template
+          >
+        </div>
       </template>
+      <v-menu v-if="!xs" location="bottom end">
+        <template #activator="{ props: activator }"
+          ><v-btn
+            v-bind="activator"
+            icon="mdi-help-circle-outline"
+            variant="text"
+            size="small"
+            aria-label="ヘルプ"
+        /></template>
+        <v-list density="compact"
+          ><v-list-item :to="{ name: 'terms' }" title="利用規約" /><v-list-item
+            :to="{ name: 'privacy' }"
+            title="プライバシーポリシー"
+        /></v-list>
+      </v-menu>
       <v-menu v-if="auth.user" location="bottom end">
         <template #activator="{ props: activator }">
           <v-btn v-bind="activator" variant="text" class="px-1" aria-label="アカウントメニュー">
