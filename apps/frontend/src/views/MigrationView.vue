@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { TARGETS, type Target } from 'utils'
+import { isAllowed, TARGETS, type Target } from 'utils'
 import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 import OperationError from '../components/common/OperationError.vue'
 import ScriptOutput from '../components/common/ScriptOutput.vue'
 import DatabasePage from '../components/database/DatabasePage.vue'
+import AutoDeployPanel from '../components/deployment/AutoDeployPanel.vue'
 import type { DatabaseData } from '../composables/useDatabaseQuery.ts'
 import { useOnline } from '../composables/useOnline.ts'
+import type { ProductData } from '../composables/useProductQuery.ts'
 import { type MigrationChange, useMigrationScript } from '../composables/useScriptMutations.ts'
 import { useVersionQuery } from '../composables/useVersionQuery.ts'
 import { changeSummary } from '../design/migration.ts'
@@ -19,6 +22,10 @@ import { fullName, kindLabels, toInput } from '../design/object.ts'
 const props = defineProps<{ productId: string; databaseId: string }>()
 const route = useRoute()
 const online = useOnline()
+const { xs } = useDisplay()
+const method = ref<'script' | 'auto'>('script')
+const canDeploy = (product: ProductData) =>
+  product.product.target === 'postgresql18' && isAllowed(product.role, 'deploy')
 const migration = useMigrationScript(props.databaseId)
 const picked = reactive<{ from?: string; to?: string }>({
   from: typeof route.query.from === 'string' ? route.query.from : undefined,
@@ -84,6 +91,14 @@ const counts = computed(() => {
     outsideTransaction: changes.filter((c) => c.impact.outsideTransaction).length,
   }
 })
+
+/** The automatic migration's options: never without the drops (it would skip the check). */
+const autoOptions = computed(() => ({
+  indexesConcurrently: options.indexesConcurrently,
+  constraintsNotValid: options.constraintsNotValid,
+  lockTimeoutMs:
+    options.lockTimeout && !lockTimeoutError.value ? options.lockTimeoutSeconds * 1000 : null,
+}))
 
 const generate = (database: DatabaseData, target: Target) => {
   const { from, to } = pair(database)
@@ -153,6 +168,27 @@ const expanded = ref(false)
             @update:model-value="picked.to = $event"
           />
         </div>
+        <template v-if="canDeploy(product)">
+          <h3 class="mt-5 mb-1">実行方法</h3>
+          <v-btn-toggle
+            v-model="method"
+            mandatory
+            variant="outlined"
+            density="comfortable"
+            divided
+            :class="{ 'w-100': xs }"
+          >
+            <v-btn
+              value="script"
+              prepend-icon="mdi-file-code-outline"
+              :class="{ 'flex-1-1': xs }"
+              >{{ xs ? 'DDL出力' : '更新用DDLを出力' }}</v-btn
+            >
+            <v-btn value="auto" prepend-icon="mdi-lightning-bolt" :class="{ 'flex-1-1': xs }">{{
+              xs ? '自動実行' : '自動マイグレーション'
+            }}</v-btn>
+          </v-btn-toggle>
+        </template>
         <h3 class="mt-4 mb-1">生成オプション</h3>
         <template v-if="product.product.target === 'postgresql18'">
           <v-checkbox
@@ -180,8 +216,14 @@ const expanded = ref(false)
             />
           </div>
         </template>
-        <v-checkbox v-model="options.includeDrops" label="削除（DROP）を含める" hide-details />
+        <v-checkbox
+          v-if="method === 'script'"
+          v-model="options.includeDrops"
+          label="削除（DROP）を含める"
+          hide-details
+        />
         <v-btn
+          v-if="method === 'script'"
           color="primary"
           class="mt-4"
           prepend-icon="mdi-file-code-outline"
@@ -197,77 +239,93 @@ const expanded = ref(false)
           >更新用DDLを出力</v-btn
         >
       </v-card>
-      <OperationError
-        :error="migration.error.value"
-        @reload="generate(database, product.product.target)"
+      <AutoDeployPanel
+        v-if="method === 'auto' && canDeploy(product)"
+        :product-id="productId"
+        :database-id="databaseId"
+        kind="migration"
+        :connections="product.connections"
+        :versions="database.versions"
+        :deployments="database.deployments"
+        :to-version-id="pair(database).to?.id"
+        :from-version-id="pair(database).from?.id"
+        :migration-options="autoOptions"
       />
-      <template v-if="result">
-        <v-card class="mb-4">
-          <div class="d-flex align-center flex-wrap ga-3 px-4 py-3 border-b">
-            <h3>差分 {{ result.difference.changes.length }}件</h3>
-            <v-chip v-if="counts.dataLoss" color="error">データ損失 {{ counts.dataLoss }}</v-chip>
-            <v-chip v-if="counts.recreation" color="warning">再作成 {{ counts.recreation }}</v-chip>
-            <v-chip v-if="counts.outsideTransaction" color="info"
-              >トランザクション外 {{ counts.outsideTransaction }}</v-chip
-            >
-          </div>
-          <p v-if="result.difference.changes.length === 0" class="pa-4 screen-caption">
-            v{{ result.fromVersion.number }} と v{{ result.toVersion.number }}
-            の設計に差分はありません。
-          </p>
-          <v-list v-else density="compact">
-            <v-list-item
-              v-for="(change, i) in expanded
-                ? result.difference.changes
-                : result.difference.changes.slice(0, 20)"
-              :key="i"
-              :class="{ 'bg-red-lighten-5': change.impact.dataLoss }"
-            >
-              <div class="d-flex align-center ga-3 flex-wrap">
-                <strong :class="['font-mono', signColors[change.action]]">{{
-                  signs[change.action]
-                }}</strong>
-                <span class="font-mono text-body-2">{{ label(change).name }}</span>
-                <span class="text-body-2 text-medium-emphasis">{{
-                  label(change).description
-                }}</span>
-                <v-spacer />
-                <v-chip v-if="change.impact.dataLoss" color="error">データ損失</v-chip>
-                <v-chip v-if="change.impact.recreation" color="warning">再作成</v-chip>
-                <v-chip v-if="change.impact.outsideTransaction" color="info"
-                  >トランザクション外</v-chip
-                >
-              </div>
-            </v-list-item>
-          </v-list>
-          <div v-if="result.difference.changes.length > 20" class="pa-2 border-t text-center">
-            <v-btn variant="text" size="small" @click="expanded = !expanded">{{
-              expanded ? '折りたたむ' : `すべて表示（${result.difference.changes.length}件）`
-            }}</v-btn>
-          </div>
-        </v-card>
-        <v-alert
-          v-if="!result.complete"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="mb-3"
-          text="削除（DROP）を含めていないため、適用後のデータベースは更新後の設計と一致しない可能性があります。この出力では適用済みバージョンを進めません。"
+      <template v-else>
+        <OperationError
+          :error="migration.error.value"
+          @reload="generate(database, product.product.target)"
         />
-        <v-alert
-          v-for="(warning, i) in result.warnings"
-          :key="i"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="mb-3"
-          :text="warning"
-        />
-        <ScriptOutput
-          :file-name="result.fileName"
-          :sql="result.sql"
-          :target-label="TARGETS[product.product.target].label"
-        />
+        <template v-if="result">
+          <v-card class="mb-4">
+            <div class="d-flex align-center flex-wrap ga-3 px-4 py-3 border-b">
+              <h3>差分 {{ result.difference.changes.length }}件</h3>
+              <v-chip v-if="counts.dataLoss" color="error">データ損失 {{ counts.dataLoss }}</v-chip>
+              <v-chip v-if="counts.recreation" color="warning"
+                >再作成 {{ counts.recreation }}</v-chip
+              >
+              <v-chip v-if="counts.outsideTransaction" color="info"
+                >トランザクション外 {{ counts.outsideTransaction }}</v-chip
+              >
+            </div>
+            <p v-if="result.difference.changes.length === 0" class="pa-4 screen-caption">
+              v{{ result.fromVersion.number }} と v{{ result.toVersion.number }}
+              の設計に差分はありません。
+            </p>
+            <v-list v-else density="compact">
+              <v-list-item
+                v-for="(change, i) in expanded
+                  ? result.difference.changes
+                  : result.difference.changes.slice(0, 20)"
+                :key="i"
+                :class="{ 'bg-red-lighten-5': change.impact.dataLoss }"
+              >
+                <div class="d-flex align-center ga-3 flex-wrap">
+                  <strong :class="['font-mono', signColors[change.action]]">{{
+                    signs[change.action]
+                  }}</strong>
+                  <span class="font-mono text-body-2">{{ label(change).name }}</span>
+                  <span class="text-body-2 text-medium-emphasis">{{
+                    label(change).description
+                  }}</span>
+                  <v-spacer />
+                  <v-chip v-if="change.impact.dataLoss" color="error">データ損失</v-chip>
+                  <v-chip v-if="change.impact.recreation" color="warning">再作成</v-chip>
+                  <v-chip v-if="change.impact.outsideTransaction" color="info"
+                    >トランザクション外</v-chip
+                  >
+                </div>
+              </v-list-item>
+            </v-list>
+            <div v-if="result.difference.changes.length > 20" class="pa-2 border-t text-center">
+              <v-btn variant="text" size="small" @click="expanded = !expanded">{{
+                expanded ? '折りたたむ' : `すべて表示（${result.difference.changes.length}件）`
+              }}</v-btn>
+            </div>
+          </v-card>
+          <v-alert
+            v-if="!result.complete"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            text="削除（DROP）を含めていないため、適用後のデータベースは更新後の設計と一致しない可能性があります。この出力では適用済みバージョンを進めません。"
+          />
+          <v-alert
+            v-for="(warning, i) in result.warnings"
+            :key="i"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            :text="warning"
+          />
+          <ScriptOutput
+            :file-name="result.fileName"
+            :sql="result.sql"
+            :target-label="TARGETS[product.product.target].label"
+          />
+        </template>
       </template>
     </template>
   </DatabasePage>

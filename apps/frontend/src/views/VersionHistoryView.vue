@@ -6,18 +6,26 @@ import { useDisplay } from 'vuetify'
 
 import DatabasePage from '../components/database/DatabasePage.vue'
 import VersionChip from '../components/database/VersionChip.vue'
+import DeploymentProgress from '../components/deployment/DeploymentProgress.vue'
 import NewVersionDialog from '../components/version/NewVersionDialog.vue'
 import type { DatabaseData } from '../composables/useDatabaseQuery.ts'
 import { useOnline } from '../composables/useOnline.ts'
 
 // The version history (design 4j 5j 6j): newest first ("各論 > データベース > 一覧"), with where
-// each version was applied, and a new version from a final one.
+// each version was applied, and a new version from a final one. Below it, the automatic builds and
+// migrations, newest first, each opening its progress and log ("データ仕様 > deployments").
 const props = defineProps<{ productId: string; databaseId: string }>()
 const router = useRouter()
 const { xs } = useDisplay()
 const online = useOnline()
 const creating = ref(false)
-
+const shownDeployment = ref<string>()
+const STATUS = { running: '実行中', succeeded: '成功', failed: '失敗' } as const
+const STATUS_COLORS = { running: 'info', succeeded: 'success', failed: 'error' } as const
+const versionsOf = (database: DatabaseData, d: DatabaseData['deployments'][number]) =>
+  d.fromVersionId
+    ? `v${numberOf(database, d.fromVersionId) ?? '?'} → v${numberOf(database, d.toVersionId) ?? '?'}`
+    : `v${numberOf(database, d.toVersionId) ?? '?'}`
 const dateTime = (value: number | null) =>
   value === null ? '—' : formatDate(new Date(value), 'yyyy/MM/dd HH:mm')
 const numberOf = (database: DatabaseData, versionId: string | null) =>
@@ -130,6 +138,50 @@ const openDiff = (database: DatabaseData, versionId: string) => {
         </tbody>
       </v-table>
     </v-card>
+    <template v-if="database.deployments.length">
+      <h2 class="mt-8 mb-3">実行履歴</h2>
+      <v-card>
+        <v-table class="design-table">
+          <thead>
+            <tr>
+              <th>種類</th>
+              <th>接続先</th>
+              <th>バージョン</th>
+              <th>状態</th>
+              <th v-if="!xs">実行者</th>
+              <th>開始</th>
+              <th v-if="!xs">終了</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in database.deployments" :key="d.id" @click="shownDeployment = d.id">
+              <td>{{ d.kind === 'build' ? 'ビルド' : 'マイグレーション' }}</td>
+              <td>{{ d.connectionName }}</td>
+              <td class="font-mono">{{ versionsOf(database, d) }}</td>
+              <td>
+                <v-chip :color="STATUS_COLORS[d.status]">{{ STATUS[d.status] }}</v-chip>
+              </td>
+              <td v-if="!xs">{{ d.executedByName }}</td>
+              <td class="font-mono text-caption">{{ dateTime(d.startedAt) }}</td>
+              <td v-if="!xs" class="font-mono text-caption">{{ dateTime(d.finishedAt) }}</td>
+            </tr>
+          </tbody>
+        </v-table>
+      </v-card>
+    </template>
+    <v-dialog
+      :model-value="!!shownDeployment"
+      max-width="640"
+      :class="['design-dialog', { 'bottom-sheet-dialog': xs }]"
+      @update:model-value="shownDeployment = undefined"
+    >
+      <DeploymentProgress
+        v-if="shownDeployment"
+        :database-id="databaseId"
+        :deployment-id="shownDeployment"
+        :versions="database.versions"
+      />
+    </v-dialog>
     <NewVersionDialog
       v-if="creating"
       v-model="creating"

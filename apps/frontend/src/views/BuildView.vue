@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { TARGETS, type Target } from 'utils'
+import { isAllowed, TARGETS, type Target } from 'utils'
 import { reactive, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 
 import OperationError from '../components/common/OperationError.vue'
 import ScriptOutput from '../components/common/ScriptOutput.vue'
 import DatabasePage from '../components/database/DatabasePage.vue'
+import AutoDeployPanel from '../components/deployment/AutoDeployPanel.vue'
 import type { DatabaseData } from '../composables/useDatabaseQuery.ts'
 import { useOnline } from '../composables/useOnline.ts'
+import type { ProductData } from '../composables/useProductQuery.ts'
 import { type DdlOptions, useDdlScript } from '../composables/useScriptMutations.ts'
 
-// Build (design 4l 5l 6l): the DDL script of a provisional or final version, with the options of
-// "ビルド・マイグレーション > 出力" that apply to the target. Copied or downloaded, never stored.
+// Build (design 4l 4m, 5l 5m, 6l 6m): the DDL script of a provisional or final version, with the
+// options of "ビルド・マイグレーション > 出力" that apply to the target (copied or downloaded, never
+// stored), or an automatic build on an empty connection (PostgreSQL 18, owners and managers).
 defineProps<{ productId: string; databaseId: string }>()
 const online = useOnline()
+const { xs } = useDisplay()
 const ddl = useDdlScript()
 const versionId = ref<string>()
+const method = ref<'script' | 'auto'>('script')
+const canDeploy = (product: ProductData) =>
+  product.product.target === 'postgresql18' && isAllowed(product.role, 'deploy')
 const options = reactive<Required<DdlOptions>>({
   includeSchemas: true,
   includeComments: true,
@@ -81,31 +89,68 @@ const generate = (database: DatabaseData) => {
           class="mb-4"
           @update:model-value="versionId = $event"
         />
-        <h3 class="mb-1">オプション</h3>
-        <v-checkbox
-          v-for="option in optionLabels(product.product.target)"
-          :key="option.key"
-          v-model="options[option.key]"
-          :label="option.label"
-          hide-details
-        />
-        <p class="screen-caption mt-3 d-flex ga-2">
-          <v-icon icon="mdi-file-tree-outline" size="16" />
-          依存関係の順に生成します：スキーマ → シーケンス → テーブル → 外部キー → インデックス →
-          ビュー
+        <template v-if="canDeploy(product)">
+          <h3 class="mb-1">実行方法</h3>
+          <v-btn-toggle
+            v-model="method"
+            mandatory
+            variant="outlined"
+            density="comfortable"
+            divided
+            class="mb-4"
+            :class="{ 'w-100': xs }"
+          >
+            <v-btn
+              value="script"
+              prepend-icon="mdi-file-code-outline"
+              :class="{ 'flex-1-1': xs }"
+              >{{ xs ? 'DDL出力' : 'DDLを出力' }}</v-btn
+            >
+            <v-btn value="auto" prepend-icon="mdi-lightning-bolt" :class="{ 'flex-1-1': xs }">{{
+              xs ? '自動実行' : '自動ビルド'
+            }}</v-btn>
+          </v-btn-toggle>
+        </template>
+        <template v-if="method === 'script'">
+          <h3 class="mb-1">オプション</h3>
+          <v-checkbox
+            v-for="option in optionLabels(product.product.target)"
+            :key="option.key"
+            v-model="options[option.key]"
+            :label="option.label"
+            hide-details
+          />
+          <p class="screen-caption mt-3 d-flex ga-2">
+            <v-icon icon="mdi-file-tree-outline" size="16" />
+            依存関係の順に生成します：スキーマ → シーケンス → テーブル → 外部キー → インデックス →
+            ビュー
+          </p>
+          <v-btn
+            color="primary"
+            block
+            class="mt-4"
+            prepend-icon="mdi-file-code-outline"
+            :loading="ddl.isPending.value"
+            :disabled="!online"
+            @click="generate(database)"
+            >DDLを出力</v-btn
+          >
+        </template>
+        <p v-else class="screen-caption">
+          接続先が空（バージョン管理テーブルもユーザーのオブジェクトもない）のときだけビルドできます。失敗した場合はすべてロールバックします。
         </p>
-        <v-btn
-          color="primary"
-          block
-          class="mt-4"
-          prepend-icon="mdi-file-code-outline"
-          :loading="ddl.isPending.value"
-          :disabled="!online"
-          @click="generate(database)"
-          >DDLを出力</v-btn
-        >
       </v-card>
-      <div class="build-result">
+      <AutoDeployPanel
+        v-if="method === 'auto' && canDeploy(product)"
+        :product-id="productId"
+        :database-id="databaseId"
+        kind="build"
+        :connections="product.connections"
+        :versions="database.versions"
+        :deployments="database.deployments"
+        :to-version-id="versionId ?? outputVersions(database)[0]?.id"
+      />
+      <div v-else class="build-result">
         <OperationError :error="ddl.error.value" @reload="generate(database)" />
         <template v-if="ddl.data.value">
           <v-alert
