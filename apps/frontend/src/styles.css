@@ -1,0 +1,36 @@
+/* The few styles Vuetify's classes don't cover. */
+
+/* Physical names, types, SQL and dates (no web font: the OS's monospace). */
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* The "db" mark of the app bar and the sign-in screen. */
+.app-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #16191f;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font:
+    600 12px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  flex: none;
+}
+
+/* A screen's content: the design's margins, narrower on a phone. */
+.page {
+  max-width: 1280px;
+  padding: 32px 48px;
+}
+
+@media (max-width: 599.98px) {
+  .page {
+    padding: 16px;
+  }
+}

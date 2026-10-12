@@ -22,6 +22,8 @@ catalog:
   '@electric-sql/pglite': 0.5.8
   pg: 8.23.1
   '@types/pg': ^8.23.1
+  '@tanstack/query-persist-client-core': ^5.104.1
+  idb-keyval: ^6.3.0
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:

@@ -3,26 +3,28 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { routes } from './routes.ts'
 
-test('resolves the home route', () => {
-  const router = createRouter({ history: createMemoryHistory(), routes })
+const resolve = (path: string) =>
+  createRouter({ history: createMemoryHistory(), routes }).resolve(path)
 
-  const resolved = router.resolve('/')
-
-  expect(resolved.name).toBe('home')
+test.each([
+  ['/login', 'login'],
+  ['/consent', 'consent'],
+  ['/products', 'products'],
+])('resolves %s to %s', (path, name) => {
+  expect(resolve(path).name).toBe(name)
 })
 
-test('resolves the sample route', () => {
-  const router = createRouter({ history: createMemoryHistory(), routes })
-
-  const resolved = router.resolve('/sample')
-
-  expect(resolved.name).toBe('sample')
+test('marks the sign-in screen public and the consent screen as the consent screen', () => {
+  expect(resolve('/login').meta.public).toBe(true)
+  expect(resolve('/consent').meta.consent).toBe(true)
+  expect(resolve('/products').meta.public).toBeUndefined()
 })
 
-test('has no match for an unknown path', () => {
+test('redirects the root and unknown paths to the product list', () => {
   const router = createRouter({ history: createMemoryHistory(), routes })
 
-  const resolved = router.resolve('/does-not-exist')
-
-  expect(resolved.matched).toHaveLength(0)
+  for (const path of ['/', '/does-not-exist']) {
+    const [record] = router.resolve(path).matched
+    expect(record?.redirect).toEqual({ name: 'products' })
+  }
 })

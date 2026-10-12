@@ -12,9 +12,12 @@
   },
   "dependencies": {
     "@mdi/font": "catalog:",
+    "@tanstack/query-persist-client-core": "catalog:",
     "@tanstack/vue-query": "catalog:",
     "hono": "^4.13.7",
+    "idb-keyval": "catalog:",
     "pinia": "^4.0.3",
+    "utils": "workspace:*",
     "vue": "^3.5.43",
     "vue-router": "^5.3.1",
     "vuetify": "^4.2.1"

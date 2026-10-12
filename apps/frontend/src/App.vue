@@ -1,21 +1,33 @@
 <script setup lang="ts">
+import { useQueryClient } from '@tanstack/vue-query'
+import { useRoute } from 'vue-router'
+
+import AppBar from './components/app/AppBar.vue'
+import { useOnline } from './composables/useOnline.ts'
 import { usePwaUpdate } from './composables/usePwaUpdate.ts'
+import { useRevisionCheck } from './composables/useRevisionCheck.ts'
 import { useNotificationStore } from './stores/notification.ts'
 
+const route = useRoute()
 const notification = useNotificationStore()
+const online = useOnline()
 const { needRefresh, update } = usePwaUpdate()
-const appTitle = import.meta.env.VITE_APP_TITLE
+useRevisionCheck(useQueryClient())
 </script>
 
 <template>
   <v-app>
-    <v-app-bar :title="appTitle">
-      <template #append>
-        <v-btn to="/" text="Home" />
-        <v-btn to="/sample" text="Sample" />
-      </template>
-    </v-app-bar>
+    <AppBar v-if="!route.meta.public" :crumb="route.meta.crumb" />
     <v-main>
+      <v-alert
+        v-if="!online"
+        type="warning"
+        variant="tonal"
+        density="compact"
+        rounded="0"
+        icon="mdi-cloud-off-outline"
+        text="オフラインです。表示しているのは最後に取得したデータで、変更はできません"
+      />
       <router-view />
     </v-main>
     <v-snackbar v-model="notification.visible">{{ notification.message }}</v-snackbar>
