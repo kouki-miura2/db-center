@@ -21,6 +21,20 @@ export const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/terms',
+    name: 'terms',
+    component: () => import('../views/LegalView.vue'),
+    props: { kind: 'terms' },
+    meta: { public: true },
+  },
+  {
+    path: '/privacy',
+    name: 'privacy',
+    component: () => import('../views/LegalView.vue'),
+    props: { kind: 'privacy' },
+    meta: { public: true },
+  },
+  {
     path: '/consent',
     name: 'consent',
     component: () => import('../views/ConsentView.vue'),

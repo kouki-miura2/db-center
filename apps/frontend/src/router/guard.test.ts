@@ -1,7 +1,7 @@
 import { expect, test } from 'vite-plus/test'
 import type { RouteMeta } from 'vue-router'
 
-import { redirectFor } from './guard.ts'
+import { redirectFor, safeRedirect } from './guard.ts'
 
 const route = (name: string, meta: RouteMeta = {}, fullPath = `/${name}`) => ({
   name,
@@ -39,4 +39,13 @@ test('sends a user who already agreed from the consent screen home', () => {
 
 test('lets a signed-in user through', () => {
   expect(redirectFor(route('products'), signedIn)).toBeNull()
+})
+
+test('goes back after signing in only to a path inside the app', () => {
+  expect(safeRedirect('/products/p1?tab=x')).toBe('/products/p1?tab=x')
+  expect(safeRedirect(undefined)).toEqual({ name: 'products' })
+  expect(safeRedirect(['/products'])).toEqual({ name: 'products' })
+  expect(safeRedirect('https://evil.example')).toEqual({ name: 'products' })
+  expect(safeRedirect('//evil.example')).toEqual({ name: 'products' })
+  expect(safeRedirect('/\\evil.example')).toEqual({ name: 'products' })
 })

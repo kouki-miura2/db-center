@@ -25,6 +25,13 @@ interface ErrorBody {
 const NETWORK_MESSAGE = '通信できませんでした。接続を確認してください'
 const TIMEOUT_MESSAGE = '通信がタイムアウトしました。時間をおいて再度お試しください'
 
+/** Whether a mutation succeeded, for a handler that shows its failure through the mutation's `error`. */
+export const succeeded = (promise: Promise<unknown>): Promise<boolean> =>
+  promise.then(
+    () => true,
+    () => false,
+  )
+
 /** Whether the request never got an answer (offline, timed out), not an error from the API. */
 export const isNetworkError = (error: unknown): boolean =>
   error instanceof ApiError && error.code === 'network'
@@ -34,17 +41,18 @@ export const isNetworkError = (error: unknown): boolean =>
  * (`{ error: { code, message, fields? } }`) or no response at all is thrown as an `ApiError`, so
  * TanStack Query sees it as an error.
  */
-export const call = async <T>(
-  request: Promise<{ ok: boolean; status: number; json: () => Promise<T> }>,
-): Promise<T> => {
-  let res: Awaited<typeof request>
+export const call = async <R extends { ok: boolean; status: number; json: () => Promise<unknown> }>(
+  request: Promise<R>,
+): Promise<Awaited<ReturnType<R['json']>>> => {
+  type T = Awaited<ReturnType<R['json']>>
+  let res: R
   try {
     res = await request
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'TimeoutError'
     throw new ApiError('network', timedOut ? TIMEOUT_MESSAGE : NETWORK_MESSAGE)
   }
-  if (res.ok) return res.status === 204 ? (undefined as T) : res.json()
+  if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T
   const body = (await res.json().catch(() => ({}))) as ErrorBody
   throw new ApiError(
     body.error?.code ?? 'internal',

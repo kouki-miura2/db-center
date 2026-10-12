@@ -8,14 +8,18 @@ const resolve = (path: string) =>
 
 test.each([
   ['/login', 'login'],
+  ['/terms', 'terms'],
+  ['/privacy', 'privacy'],
   ['/consent', 'consent'],
   ['/products', 'products'],
 ])('resolves %s to %s', (path, name) => {
   expect(resolve(path).name).toBe(name)
 })
 
-test('marks the sign-in screen public and the consent screen as the consent screen', () => {
+test('marks the sign-in, terms and privacy screens public and the consent screen as the consent screen', () => {
   expect(resolve('/login').meta.public).toBe(true)
+  expect(resolve('/terms').meta.public).toBe(true)
+  expect(resolve('/privacy').meta.public).toBe(true)
   expect(resolve('/consent').meta.consent).toBe(true)
   expect(resolve('/products').meta.public).toBeUndefined()
 })

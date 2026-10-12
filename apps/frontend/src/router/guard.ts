@@ -23,3 +23,10 @@ export const redirectFor = (
   if (session.consentRequired) return to.meta.consent ? null : { name: 'consent' }
   return to.meta.consent ? HOME : null
 }
+
+/**
+ * Where to go after signing in: the `redirect` query if it's a path inside the app, otherwise the
+ * product list. Anything else (another origin, `//host`, a URL) is ignored.
+ */
+export const safeRedirect = (redirect: unknown): RouteLocationRaw =>
+  typeof redirect === 'string' && /^\/(?![/\\])/.test(redirect) ? redirect : HOME
