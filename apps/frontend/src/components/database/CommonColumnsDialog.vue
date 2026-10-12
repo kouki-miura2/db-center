@@ -17,6 +17,7 @@ import {
 } from '../../forms/common-columns.ts'
 import { fieldError, maxLength, required } from '../../forms/input.ts'
 import { useNotificationStore } from '../../stores/notification.ts'
+import FormField from '../common/FormField.vue'
 import OperationError from '../common/OperationError.vue'
 const props = defineProps<{ productId: string; databaseId: string; target: Target }>()
 const open = defineModel<boolean>({ required: true })
@@ -152,6 +153,7 @@ const types = computed(() =>
     :fullscreen="xs"
     :persistent="dirty || mutation.saveCommonColumns.isPending.value"
     max-width="1000"
+    :class="['design-dialog', 'common-columns-dialog', { 'fullscreen-form-dialog': xs }]"
     @update:model-value="
       (value) => {
         if (!value) close()
@@ -159,12 +161,20 @@ const types = computed(() =>
     "
   >
     <v-card
-      ><v-card-title class="d-flex align-center ga-2"
-        >共通カラムのセット
+      ><v-card-title class="dialog-heading d-flex align-center ga-2"
+        ><v-btn
+          v-if="xs"
+          icon="mdi-arrow-left"
+          variant="text"
+          size="small"
+          aria-label="共通カラムを閉じる"
+          :disabled="mutation.saveCommonColumns.isPending.value"
+          @click="close"
+        />共通カラムのセット
         <v-chip>{{ columns.length }} / {{ LIMITS.columnsPerTable }}</v-chip></v-card-title
       >
       <v-form v-model="valid" @submit.prevent="save"
-        ><v-card-text>
+        ><v-card-text class="dialog-body">
           <OperationError :error="error" @reload="reload" />
           <div v-if="fieldMessages.length" class="mb-4">
             <v-btn
@@ -206,7 +216,7 @@ const types = computed(() =>
                   >カラムを追加</v-btn
                 ></v-col
               >
-              <v-col cols="12" md="8"
+              <v-col cols="12" md="8" class="column-details"
                 ><template v-if="row">
                   <div class="d-flex justify-end ga-1 mb-3">
                     <v-btn
@@ -232,30 +242,36 @@ const types = computed(() =>
                       >カラムを削除</v-btn
                     >
                   </div>
-                  <v-text-field
-                    v-model="row.name"
-                    label="物理名 *"
-                    :disabled="disabled"
-                    :rules="[required, maxLength(LIMITS.expressionMaxLength), identifierRule]"
-                    :error-messages="field('name')"
-                  />
-                  <v-text-field
-                    v-model="row.logicalName"
-                    label="論理名"
-                    :disabled="disabled"
-                    :rules="[maxLength(LIMITS.logicalNameMaxLength)]"
-                    :error-messages="field('logicalName')"
-                  />
-                  <v-combobox
-                    v-model="row.dataType"
-                    label="データ型 *"
-                    :items="types"
-                    :disabled="disabled"
-                    :rules="[required, maxLength(LIMITS.expressionMaxLength)]"
-                    :error-messages="field('dataType')"
-                    hint="長さ・精度を含めて入力できます"
-                    persistent-hint
-                  />
+                  <FormField v-slot="{ id }" label="物理名" required
+                    ><v-text-field
+                      v-model="row.name"
+                      :id="id"
+                      hide-details="auto"
+                      :disabled="disabled"
+                      :rules="[required, maxLength(LIMITS.expressionMaxLength), identifierRule]"
+                      :error-messages="field('name')"
+                  /></FormField>
+                  <FormField v-slot="{ id }" label="論理名"
+                    ><v-text-field
+                      v-model="row.logicalName"
+                      :id="id"
+                      hide-details="auto"
+                      :disabled="disabled"
+                      :rules="[maxLength(LIMITS.logicalNameMaxLength)]"
+                      :error-messages="field('logicalName')"
+                  /></FormField>
+                  <FormField v-slot="{ id }" label="データ型" required
+                    ><v-combobox
+                      v-model="row.dataType"
+                      :id="id"
+                      hide-details="auto"
+                      :items="types"
+                      :disabled="disabled"
+                      :rules="[required, maxLength(LIMITS.expressionMaxLength)]"
+                      :error-messages="field('dataType')"
+                      hint="長さ・精度を含めて入力できます"
+                      persistent-hint
+                  /></FormField>
                   <v-checkbox
                     v-model="row.notNull"
                     label="NOT NULL"
@@ -264,28 +280,32 @@ const types = computed(() =>
                     hide-details="auto"
                     class="mb-3"
                   />
-                  <v-text-field
-                    :model-value="row.defaultValue || ''"
-                    label="デフォルト値"
-                    :disabled="disabled || !!row.generation"
-                    :rules="[maxLength(LIMITS.expressionMaxLength)]"
-                    :error-messages="field('defaultValue')"
-                    @update:model-value="row.defaultValue = $event || null"
-                  />
-                  <v-select
-                    :model-value="row.generation?.kind ?? 'none'"
-                    label="値の生成"
-                    :items="[
-                      { value: 'none', title: 'なし' },
-                      ...(target === 'postgresql18'
-                        ? [{ value: 'identity', title: 'IDENTITY' }]
-                        : []),
-                      { value: 'generated', title: '生成列' },
-                    ]"
-                    :disabled="disabled"
-                    :error-messages="field('generation')"
-                    @update:model-value="generation"
-                  />
+                  <FormField v-slot="{ id }" label="デフォルト値"
+                    ><v-text-field
+                      :model-value="row.defaultValue || ''"
+                      :id="id"
+                      hide-details="auto"
+                      :disabled="disabled || !!row.generation"
+                      :rules="[maxLength(LIMITS.expressionMaxLength)]"
+                      :error-messages="field('defaultValue')"
+                      @update:model-value="row.defaultValue = $event || null"
+                  /></FormField>
+                  <FormField v-slot="{ id }" label="値の生成"
+                    ><v-select
+                      :model-value="row.generation?.kind ?? 'none'"
+                      :id="id"
+                      hide-details="auto"
+                      :items="[
+                        { value: 'none', title: 'なし' },
+                        ...(target === 'postgresql18'
+                          ? [{ value: 'identity', title: 'IDENTITY' }]
+                          : []),
+                        { value: 'generated', title: '生成列' },
+                      ]"
+                      :disabled="disabled"
+                      :error-messages="field('generation')"
+                      @update:model-value="generation"
+                  /></FormField>
                   <v-checkbox
                     v-if="row.generation?.kind === 'identity'"
                     v-model="row.generation.always"
@@ -293,60 +313,72 @@ const types = computed(() =>
                     :disabled="disabled"
                   />
                   <template v-if="row.generation?.kind === 'generated'"
-                    ><v-textarea
-                      v-model="row.generation.expression"
-                      label="生成式 *"
-                      rows="2"
-                      :rules="[required, maxLength(LIMITS.expressionMaxLength)]"
-                      :disabled="disabled"
-                      :error-messages="field('generation.expression')" /><v-checkbox
+                    ><FormField v-slot="{ id }" label="生成式" required
+                      ><v-textarea
+                        v-model="row.generation.expression"
+                        :id="id"
+                        hide-details="auto"
+                        rows="2"
+                        :rules="[required, maxLength(LIMITS.expressionMaxLength)]"
+                        :disabled="disabled"
+                        :error-messages="field('generation.expression')" /></FormField
+                    ><v-checkbox
                       v-model="row.generation.stored"
                       label="STORED（オフ: VIRTUAL）"
                       :disabled="disabled"
                   /></template>
-                  <v-textarea
-                    v-model="row.comment"
-                    label="コメント"
-                    rows="2"
-                    :disabled="disabled"
-                    :rules="[maxLength(LIMITS.commentMaxLength)]"
-                    :error-messages="field('comment')"
-                  />
+                  <FormField v-slot="{ id }" label="コメント"
+                    ><v-textarea
+                      v-model="row.comment"
+                      :id="id"
+                      hide-details="auto"
+                      rows="2"
+                      :disabled="disabled"
+                      :rules="[maxLength(LIMITS.commentMaxLength)]"
+                      :error-messages="field('comment')"
+                  /></FormField>
                   <v-expansion-panels variant="accordion"
                     ><v-expansion-panel title="詳細"
                       ><v-expansion-panel-text>
-                        <v-text-field
-                          v-if="target === 'postgresql18'"
-                          v-model="row.collation"
-                          label="照合順序"
-                          :disabled="disabled"
-                          :rules="[maxLength(LIMITS.expressionMaxLength)]"
-                          :error-messages="field('collation')"
-                        />
-                        <v-select
-                          v-else
-                          v-model="row.collation"
-                          label="照合順序"
-                          :items="['BINARY', 'NOCASE', 'RTRIM']"
-                          clearable
-                          :disabled="disabled"
-                          :error-messages="field('collation')"
-                        />
-                        <template v-if="target === 'postgresql18'"
+                        <FormField v-slot="{ id }" label="照合順序" v-if="target === 'postgresql18'"
+                          ><v-text-field
+                            v-model="row.collation"
+                            :id="id"
+                            hide-details="auto"
+                            :disabled="disabled"
+                            :rules="[maxLength(LIMITS.expressionMaxLength)]"
+                            :error-messages="field('collation')"
+                        /></FormField>
+                        <FormField v-slot="{ id }" label="照合順序" v-else
                           ><v-select
-                            v-model="row.storage"
-                            label="ストレージ"
-                            :items="['plain', 'external', 'extended', 'main']"
+                            v-model="row.collation"
+                            :id="id"
+                            hide-details="auto"
+                            :items="['BINARY', 'NOCASE', 'RTRIM']"
                             clearable
                             :disabled="disabled"
-                            :error-messages="field('storage')" /><v-select
-                            v-model="row.compression"
-                            label="圧縮"
-                            :items="['pglz', 'lz4']"
-                            clearable
-                            :disabled="disabled"
-                            :error-messages="field('compression')"
-                        /></template>
+                            :error-messages="field('collation')"
+                        /></FormField>
+                        <template v-if="target === 'postgresql18'"
+                          ><FormField v-slot="{ id }" label="ストレージ"
+                            ><v-select
+                              v-model="row.storage"
+                              :id="id"
+                              hide-details="auto"
+                              :items="['plain', 'external', 'extended', 'main']"
+                              clearable
+                              :disabled="disabled"
+                              :error-messages="field('storage')" /></FormField
+                          ><FormField v-slot="{ id }" label="圧縮"
+                            ><v-select
+                              v-model="row.compression"
+                              :id="id"
+                              hide-details="auto"
+                              :items="['pglz', 'lz4']"
+                              clearable
+                              :disabled="disabled"
+                              :error-messages="field('compression')" /></FormField
+                        ></template>
                         <v-checkbox
                           v-else
                           v-model="row.autoincrement"
@@ -364,7 +396,7 @@ const types = computed(() =>
               :text="fieldError(error, 'columns')"
             />
           </template> </v-card-text
-        ><v-card-actions
+        ><v-card-actions class="dialog-actions"
           ><v-spacer /><v-btn
             variant="outlined"
             :disabled="mutation.saveCommonColumns.isPending.value"
@@ -373,6 +405,7 @@ const types = computed(() =>
           ><v-btn
             type="submit"
             color="primary"
+            variant="flat"
             :loading="mutation.saveCommonColumns.isPending.value"
             :disabled="disabled || !query.data.value || !allReady || (columns.length > 0 && !valid)"
             >保存する</v-btn

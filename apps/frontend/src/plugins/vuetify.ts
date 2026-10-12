@@ -43,6 +43,7 @@ export const vuetify = createVuetify({
     VTextarea: { variant: 'outlined', density: 'comfortable', color: 'primary' },
     VSelect: { variant: 'outlined', density: 'comfortable', color: 'primary' },
     VAutocomplete: { variant: 'outlined', density: 'comfortable', color: 'primary' },
+    VCombobox: { variant: 'outlined', density: 'comfortable', color: 'primary' },
     VCheckbox: { color: 'primary', density: 'comfortable' },
     VChip: { size: 'small', variant: 'tonal' },
     VDialog: { maxWidth: 560 },

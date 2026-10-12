@@ -58,11 +58,12 @@ const { xs } = useDisplay()
       <v-card-actions
         ><v-spacer /><v-btn variant="text" :disabled="pending" @click="open = false"
           >キャンセル</v-btn
-        ><v-btn v-if="step === 1" color="error" :disabled="!online" @click="step = 2"
+        ><v-btn v-if="step === 1" color="error" variant="flat" :disabled="!online" @click="step = 2"
           >削除の確認に進む</v-btn
         ><v-btn
           v-else
           color="error"
+          variant="flat"
           prepend-icon="mdi-delete-forever-outline"
           :loading="pending"
           :disabled="!online || confirmation !== props.name"

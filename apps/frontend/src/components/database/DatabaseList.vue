@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { formatDate, isAllowed, LIMITS } from 'utils'
+import { formatDate, isAllowed } from 'utils'
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 
 import { succeeded } from '../../api/call.ts'
@@ -13,7 +14,10 @@ import DatabaseFormDialog from './DatabaseFormDialog.vue'
 import VersionChip from './VersionChip.vue'
 const props = defineProps<{ productId: string; data: ProductData }>()
 const creating = defineModel<boolean>('creating', { default: false })
-const { xs } = useDisplay()
+const { xs, sm } = useDisplay()
+const router = useRouter()
+const select = (databaseId: string) =>
+  router.push({ name: 'database', params: { productId: props.productId, databaseId } })
 const online = useOnline()
 const query = useProductQuery(props.productId)
 const mutation = useDatabaseMutations(props.productId)
@@ -51,40 +55,109 @@ const close = (value: boolean) => {
 }
 </script>
 <template>
-  <div class="d-flex align-center ga-3 mb-4">
-    <h2 class="text-subtitle-1 font-weight-bold">データベース</h2>
-    <v-chip>{{ databases.length }} / {{ LIMITS.databasesPerProduct }}</v-chip
-    ><v-spacer /><v-btn
-      v-if="manage && !xs"
-      color="primary"
-      prepend-icon="mdi-plus"
-      :disabled="!online || databases.length >= LIMITS.databasesPerProduct"
-      @click="creating = true"
-      >データベースを作成</v-btn
-    >
-  </div>
   <v-card v-if="!databases.length" class="pa-8 text-center"
     ><v-icon size="40" color="primary" class="mb-3">mdi-database-outline</v-icon>
-    <p class="text-subtitle-2 mb-2">データベースはまだありません</p>
-    <p class="text-caption text-medium-emphasis">
-      データベースを作成して設計を始めましょう。
-    </p></v-card
+    <h2 class="mb-2">データベースはまだありません</h2>
+    <p class="screen-caption">データベースを作成して設計を始めましょう。</p></v-card
   >
   <div v-else-if="xs" class="d-flex flex-column ga-3">
-    <v-card v-for="database in databases" :key="database.id"
-      ><v-card-text>
-        <div class="d-flex align-center ga-2 mb-3">
-          <v-icon color="primary">mdi-database-outline</v-icon
-          ><router-link
-            class="font-mono font-weight-bold flex-grow-1 text-break"
-            :to="{ name: 'database', params: { productId, databaseId: database.id } }"
-            >{{ database.name }}</router-link
-          ><v-btn
-            icon="mdi-dots-vertical"
-            variant="text"
-            size="small"
-            :aria-label="`${database.name}の操作`"
-            ><v-menu activator="parent"
+    <v-card v-for="database in databases" :key="database.id" class="database-mobile-card">
+      <router-link
+        class="database-card-link"
+        :to="{ name: 'database', params: { productId, databaseId: database.id } }"
+        ><div class="d-flex align-center ga-2 mb-2">
+          <span class="font-mono font-weight-bold">{{ database.name }}</span
+          ><VersionChip :version="database.latestVersion" combined />
+        </div>
+        <p class="screen-caption">
+          {{
+            database.latestFinalVersion
+              ? '確定 v' + database.latestFinalVersion.number + ' ・ '
+              : ''
+          }}テーブル {{ database.tableCount }} ・
+          <span class="font-mono">{{
+            formatDate(new Date(database.updatedAt), 'yyyy/MM/dd HH:mm')
+          }}</span>
+        </p></router-link
+      >
+      <div class="database-card-menu">
+        <v-menu
+          ><template #activator="{ props: menu }"
+            ><v-btn
+              v-bind="menu"
+              icon="mdi-dots-vertical"
+              variant="text"
+              size="small"
+              :aria-label="database.name + 'の操作'"
+              @click.stop /></template
+          ><v-list density="compact"
+            ><v-list-item
+              title="共通カラムのセット"
+              @click="selected = { id: database.id, kind: 'common' }" /><v-list-item
+              v-if="manage"
+              title="名前・説明を変更"
+              :disabled="!online"
+              @click="selected = { id: database.id, kind: 'edit' }" /><v-list-item
+              v-if="manage"
+              title="削除"
+              base-color="error"
+              :disabled="!online"
+              @click="openDelete(database)" /></v-list
+        ></v-menu>
+      </div>
+    </v-card>
+  </div>
+  <v-card v-else
+    ><v-table class="design-table database-table"
+      ><thead>
+        <tr>
+          <th>データベース名</th>
+          <th>{{ sm ? '最新 / 確定済み' : '最新バージョン' }}</th>
+          <th v-if="!sm">確定済み</th>
+          <th>更新日時</th>
+          <th />
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="database in databases" :key="database.id" @click="select(database.id)">
+          <td>
+            <router-link
+              class="row-link font-mono"
+              :to="{ name: 'database', params: { productId, databaseId: database.id } }"
+              @click.stop
+              >{{ database.name }}</router-link
+            >
+            <p class="screen-caption mt-1">
+              {{
+                data.product.target === 'postgresql18'
+                  ? 'スキーマ ' + database.schemaCount + ' ・ '
+                  : ''
+              }}テーブル {{ database.tableCount }}
+            </p>
+          </td>
+          <td>
+            <VersionChip :version="database.latestVersion" :combined="sm" />
+            <p v-if="sm" class="screen-caption mt-1 font-mono">
+              確定
+              {{ database.latestFinalVersion ? 'v' + database.latestFinalVersion.number : '—' }}
+            </p>
+          </td>
+          <td v-if="!sm" class="font-mono">
+            {{ database.latestFinalVersion ? 'v' + database.latestFinalVersion.number : '—' }}
+          </td>
+          <td class="font-mono text-caption">
+            {{ formatDate(new Date(database.updatedAt), 'yyyy/MM/dd HH:mm') }}
+          </td>
+          <td>
+            <v-menu
+              ><template #activator="{ props: menu }"
+                ><v-btn
+                  v-bind="menu"
+                  icon="mdi-dots-vertical"
+                  variant="text"
+                  size="small"
+                  :aria-label="database.name + 'の操作'"
+                  @click.stop /></template
               ><v-list density="compact"
                 ><v-list-item
                   title="共通カラムのセット"
@@ -97,80 +170,14 @@ const close = (value: boolean) => {
                   title="削除"
                   base-color="error"
                   :disabled="!online"
-                  @click="openDelete(database)" /></v-list></v-menu
-          ></v-btn>
-        </div>
-        <p class="text-caption text-medium-emphasis mb-3">
-          {{
-            data.product.target === 'postgresql18' ? `スキーマ ${database.schemaCount} · ` : ''
-          }}テーブル {{ database.tableCount }}
-        </p>
-        <VersionChip :version="database.latestVersion" /><span class="ml-2 text-caption"
-          >確定
-          {{ database.latestFinalVersion ? `v${database.latestFinalVersion.number}` : '—' }}</span
-        >
-        <p class="text-caption text-medium-emphasis mt-3 font-mono">
-          更新 {{ formatDate(new Date(database.updatedAt), 'yyyy/MM/dd HH:mm') }}
-        </p>
-      </v-card-text></v-card
-    >
-  </div>
-  <v-card v-else
-    ><v-table
-      ><thead>
-        <tr>
-          <th>データベース名</th>
-          <th>最新バージョン</th>
-          <th>確定済み</th>
-          <th>更新日時</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="database in databases" :key="database.id">
-          <td class="py-3">
-            <router-link
-              class="font-mono font-weight-bold"
-              :to="{ name: 'database', params: { productId, databaseId: database.id } }"
-              >{{ database.name }}</router-link
-            >
-            <p class="text-caption text-medium-emphasis mt-1">
-              {{
-                data.product.target === 'postgresql18' ? `スキーマ ${database.schemaCount} · ` : ''
-              }}テーブル {{ database.tableCount }}
-            </p>
-          </td>
-          <td><VersionChip :version="database.latestVersion" /></td>
-          <td class="font-mono text-body-2">
-            {{ database.latestFinalVersion ? `v${database.latestFinalVersion.number}` : '—' }}
-          </td>
-          <td class="font-mono text-caption">
-            {{ formatDate(new Date(database.updatedAt), 'yyyy/MM/dd HH:mm') }}
-          </td>
-          <td>
-            <v-btn
-              icon="mdi-dots-vertical"
-              variant="text"
-              size="small"
-              :aria-label="`${database.name}の操作`"
-              ><v-menu activator="parent"
-                ><v-list density="compact"
-                  ><v-list-item
-                    title="共通カラムのセット"
-                    @click="selected = { id: database.id, kind: 'common' }" /><v-list-item
-                    v-if="manage"
-                    title="名前・説明を変更"
-                    :disabled="!online"
-                    @click="selected = { id: database.id, kind: 'edit' }" /><v-list-item
-                    v-if="manage"
-                    title="削除"
-                    base-color="error"
-                    :disabled="!online"
-                    @click="openDelete(database)" /></v-list></v-menu
-            ></v-btn>
+                  @click="openDelete(database)" /></v-list
+            ></v-menu>
           </td>
         </tr></tbody></v-table
   ></v-card>
+  <p v-if="!xs && databases.length" class="table-note">
+    ⋮ メニュー：名前の変更・削除（オーナー・マネージャーのみ）
+  </p>
   <DatabaseFormDialog
     v-if="creating && manage"
     v-model="creating"

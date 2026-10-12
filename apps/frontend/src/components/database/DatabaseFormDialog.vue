@@ -10,8 +10,11 @@ import { useOnline } from '../../composables/useOnline.ts'
 import { useProductQuery } from '../../composables/useProductQuery.ts'
 import type { ProductData } from '../../composables/useProductQuery.ts'
 import { fieldError, maxLength, required } from '../../forms/input.ts'
+import { useAuthStore } from '../../stores/auth.ts'
 import { useNotificationStore } from '../../stores/notification.ts'
+import FormField from '../common/FormField.vue'
 import OperationError from '../common/OperationError.vue'
+import VersionChip from './VersionChip.vue'
 
 const props = defineProps<{
   productId: string
@@ -22,7 +25,8 @@ const open = defineModel<boolean>({ required: true })
 const mutation = useDatabaseMutations(props.productId)
 const router = useRouter()
 const online = useOnline()
-const { xs } = useDisplay()
+const { xs, sm } = useDisplay()
+const auth = useAuthStore()
 const notification = useNotificationStore()
 const product = useProductQuery(props.productId)
 const original = ref(props.database)
@@ -97,78 +101,145 @@ const save = async () => {
 }
 </script>
 <template>
-  <v-dialog v-model="open" :fullscreen="xs" :persistent="pending">
-    <v-card
-      ><v-card-title>{{
-        database ? 'データベースの名前・説明を変更' : 'データベースを作成'
-      }}</v-card-title>
-      <v-form v-model="valid" @submit.prevent="save"
-        ><v-card-text>
+  <v-dialog
+    v-model="open"
+    :fullscreen="xs"
+    :max-width="xs ? undefined : sm ? 616 : 596"
+    :persistent="pending"
+    :class="['design-dialog', 'database-form-dialog', { 'fullscreen-form-dialog': xs }]"
+  >
+    <v-card>
+      <div class="dialog-heading d-flex align-center ga-2">
+        <v-btn
+          v-if="xs"
+          icon="mdi-arrow-left"
+          variant="text"
+          size="small"
+          aria-label="キャンセル"
+          :disabled="pending"
+          @click="open = false"
+        />
+        <h2>{{ database ? 'データベースの名前・説明を変更' : 'データベースを作成' }}</h2>
+        <v-spacer v-if="xs" /><v-avatar v-if="xs" size="30" class="member-avatar avatar-owner">{{
+          [...(auth.user?.name ?? '')][0]
+        }}</v-avatar>
+      </div>
+      <v-form v-model="valid" @submit.prevent="save">
+        <div class="dialog-body">
           <OperationError :error="error" @reload="reload" />
-          <v-text-field
-            v-model="name"
-            label="データベース名 *"
-            autofocus
-            :disabled="!online || pending"
-            :rules="[
-              required,
-              (value: string) =>
-                isDatabaseName(value.trim()) ||
-                '英小文字で始まり、英小文字・数字・_のみ、63文字以内で入力してください',
-            ]"
-            :error-messages="fieldError(error, 'name')"
-            hint="例: ec_main、analytics"
-            persistent-hint
-            class="mb-2"
-          />
-          <v-textarea
-            v-model="description"
-            label="説明（任意）"
-            rows="3"
-            :disabled="!online || pending"
-            :rules="[maxLength(LIMITS.databaseDescriptionMaxLength)]"
-            :error-messages="fieldError(error, 'description')"
-          />
+          <FormField
+            v-slot="{ id }"
+            label="データベース名"
+            required
+            hint="英小文字で始まり、英小文字・数字・_のみ、63文字以内。プロダクト内で一意"
+          >
+            <v-text-field
+              :id="id"
+              v-model="name"
+              class="font-mono"
+              autofocus
+              :disabled="!online || pending"
+              :rules="[
+                required,
+                (value: string) =>
+                  isDatabaseName(value.trim()) ||
+                  '英小文字で始まり、英小文字・数字・_のみ、63文字以内で入力してください',
+              ]"
+              :error-messages="fieldError(error, 'name')"
+              hide-details="auto"
+            />
+          </FormField>
+          <FormField v-slot="{ id }" label="説明"
+            ><v-text-field
+              :id="id"
+              v-model="description"
+              :disabled="!online || pending"
+              :rules="[maxLength(LIMITS.databaseDescriptionMaxLength)]"
+              :error-messages="fieldError(error, 'description')"
+              hide-details="auto"
+          /></FormField>
           <template v-if="!database">
-            <h3 class="text-subtitle-2">初期内容</h3>
-            <v-radio-group v-model="initial" :disabled="!online || pending"
-              ><v-radio label="空のデータベース" value="empty" /><v-radio
-                label="既存の確定バージョンから複製"
-                value="clone"
-                :disabled="!cloneItems.length"
-            /></v-radio-group>
-            <template v-if="initial === 'clone'">
-              <v-select
-                v-model="sourceDatabaseId"
-                label="複製元のデータベース"
-                :items="cloneItems"
+            <div>
+              <p class="field-label">初期内容</p>
+              <v-radio-group
+                v-model="initial"
                 :disabled="!online || pending"
-                @update:model-value="sourceVersionId = ''"
-              />
+                class="initial-options"
+                hide-details
+              >
+                <v-radio value="empty" :class="{ chosen: initial === 'empty' }"
+                  ><template #label
+                    ><div>
+                      <strong>空のデータベース</strong>
+                      <p class="screen-caption">
+                        {{
+                          product.data.value?.data.product.target === 'sqlite3'
+                            ? 'スキーマなしで作成します'
+                            : 'スキーマ public のみ作成します'
+                        }}
+                      </p>
+                    </div></template
+                  ></v-radio
+                >
+                <v-radio
+                  value="clone"
+                  :class="{ chosen: initial === 'clone' }"
+                  :disabled="!cloneItems.length"
+                  ><template #label
+                    ><div>
+                      <strong>既存データベースから複製</strong>
+                      <p class="screen-caption">
+                        {{
+                          cloneItems.length
+                            ? '確定バージョンを新しいDBの v1 として複製します'
+                            : '複製できる確定バージョンはありません'
+                        }}
+                      </p>
+                    </div></template
+                  ></v-radio
+                >
+              </v-radio-group>
+            </div>
+            <template v-if="initial === 'clone'">
+              <FormField v-slot="{ id }" label="複製元のデータベース"
+                ><v-select
+                  :id="id"
+                  v-model="sourceDatabaseId"
+                  :items="cloneItems"
+                  :disabled="!online || pending"
+                  hide-details="auto"
+                  @update:model-value="sourceVersionId = ''"
+              /></FormField>
               <OperationError :error="source.error.value" />
-              <v-select
-                v-model="sourceVersionId"
-                label="複製元の確定バージョン"
-                :items="
-                  finalVersions.map((version) => ({
-                    value: version.id,
-                    title: `v${version.number}`,
-                  }))
-                "
-                :loading="!!sourceDatabaseId && source.isPending.value"
-                :disabled="!online || pending || !sourceDatabaseId"
-                :error-messages="fieldError(error, 'sourceVersionId')"
-              />
-              <p class="text-caption text-medium-emphasis">
+              <FormField v-slot="{ id }" label="複製元の確定バージョン"
+                ><v-select
+                  :id="id"
+                  v-model="sourceVersionId"
+                  :items="
+                    finalVersions.map((version) => ({
+                      value: version.id,
+                      title: 'v' + version.number,
+                    }))
+                  "
+                  :loading="!!sourceDatabaseId && source.isPending.value"
+                  :disabled="!online || pending || !sourceDatabaseId"
+                  :error-messages="fieldError(error, 'sourceVersionId')"
+                  hide-details="auto"
+              /></FormField>
+              <p class="screen-caption">
                 設計は独立したv1として複製します。共通カラムのセットは空で開始します。
               </p>
             </template>
-            <p v-else class="text-caption text-medium-emphasis">
-              v1（編集中）を作成します。PostgreSQLはpublicスキーマ、SQLiteはスキーマなしで開始します。
-            </p>
-          </template> </v-card-text
-        ><v-card-actions
-          ><v-spacer /><v-btn variant="outlined" :disabled="pending" @click="open = false"
+            <div class="creation-info d-flex align-center ga-2">
+              <v-icon size="16">mdi-information-outline</v-icon><span v-if="!xs">作成すると</span
+              ><VersionChip :version="{ id: '', number: 1, status: 'editing' }" /><span>{{
+                xs ? 'で作成されます' : 'の状態で設計画面が開きます'
+              }}</span>
+            </div>
+          </template>
+        </div>
+        <div class="dialog-actions">
+          <v-btn v-if="!xs" variant="text" :disabled="pending" @click="open = false"
             >キャンセル</v-btn
           ><v-btn
             type="submit"
@@ -180,10 +251,10 @@ const save = async () => {
               (initial === 'clone' &&
                 !finalVersions.some((version) => version.id === sourceVersionId))
             "
-            >{{ database ? '変更を保存' : '作成する' }}</v-btn
-          ></v-card-actions
-        ></v-form
-      >
+            >{{ database ? '変更を保存' : '作成して設計を開始' }}</v-btn
+          >
+        </div>
+      </v-form>
     </v-card>
   </v-dialog>
 </template>
