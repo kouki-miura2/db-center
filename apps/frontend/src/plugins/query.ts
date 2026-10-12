@@ -1,8 +1,15 @@
 import { QueryClient } from '@tanstack/vue-query'
 import { LIMITS } from 'utils'
 
-/** How long the cache is kept on the device: as long as a session can last. */
-export const CACHE_MAX_AGE_MS = LIMITS.sessionDays * 24 * 60 * 60 * 1000
+/** The longest delay `setTimeout` takes (~24.8 days); a longer one fires at once. */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1
+
+/**
+ * How long the cache is kept on the device: as long as a session can last, but no longer than a
+ * timer can wait. TanStack Query drops an unused query after `gcTime` with `setTimeout`, so a
+ * longer `gcTime` would drop every cached scope at once, before a screen could show it offline.
+ */
+export const CACHE_MAX_AGE_MS = Math.min(LIMITS.sessionDays * 24 * 60 * 60 * 1000, MAX_TIMEOUT_MS)
 
 /**
  * The app's one query client ("参照 > データの取得とキャッシュ"). Data is fetched per scope and

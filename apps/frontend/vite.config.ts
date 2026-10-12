@@ -24,6 +24,9 @@ export default defineConfig({
         // only when a PDF is made, which needs to be online anyway: don't make every device fetch
         // them up front. Its TTF fonts aren't matched by `globPatterns` either.
         globIgnores: ['**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js', '**/index.es-*.js'],
+        // The icon font is requested as `…woff2?v=7.4.47` (@mdi/font's CSS) but precached without
+        // the query: ignore `v` (besides the defaults), or the icons are blank offline.
+        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^v$/],
         // The SPA fallback must not answer the API.
         navigateFallbackDenylist: [/^\/api\//],
       },

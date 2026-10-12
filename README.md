@@ -239,6 +239,21 @@ vp run backend-worker#cf-typegen
 
 ## apps/frontend
 
+Vue 3 + Vuetify 4 PWA. Local settings go in `apps/frontend/.env.local` (untracked; the committed
+`.env` lists the names). All are optional locally:
+
+```
+VITE_GOOGLE_WEB_CLIENT_ID=<web OAuth client ID>   # unset: a disabled stand-in for the Google button
+VITE_OPERATOR_NAME=<operator name>                # shown in the terms and privacy policy
+VITE_CONTACT_EMAIL=<contact email>                # shown in the terms and privacy policy
+```
+
+- Sign in locally without Google: the sign-in screen shows a development login under `vp dev`
+  only, and the API accepts it only with `DEV_LOGIN=true` in `apps/backend-worker/.dev.vars`.
+- The service worker (the update prompt, the app working offline) runs only in a production
+  build: check it with `vp run frontend#build` and `vp run frontend#preview`, with the backend
+  dev server up (the preview proxies `/api` too).
+
 - Run format/lint/type checks:
 
 ```bash
