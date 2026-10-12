@@ -18,6 +18,8 @@ test.each([
   ['/products/p1/settings', 'product-settings'],
   ['/products/p1/invite', 'product-invite'],
   ['/products/p1/history', 'product-history'],
+  ['/products/p1/databases/db1', 'database'],
+  ['/products/p1/databases/db1/versions/v1', 'design'],
 ])('resolves %s to %s', (path, name) => {
   expect(resolve(path).name).toBe(name)
 })
