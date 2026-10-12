@@ -20,6 +20,10 @@ export default defineConfig({
       registerType: 'prompt',
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
+        // The PDF export's libraries (jsPDF and its optional canvg, html2canvas, DOMPurify) load
+        // only when a PDF is made, which needs to be online anyway: don't make every device fetch
+        // them up front. Its TTF fonts aren't matched by `globPatterns` either.
+        globIgnores: ['**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js', '**/index.es-*.js'],
         // The SPA fallback must not answer the API.
         navigateFallbackDenylist: [/^\/api\//],
       },

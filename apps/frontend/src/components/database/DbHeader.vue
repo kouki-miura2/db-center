@@ -32,8 +32,6 @@ const { xs } = useDisplay()
 const statusLabels = { editing: '編集中', provisional: '仮確定', final: '確定' } as const
 const params = computed(() => ({ productId: props.productId, databaseId: props.databaseId }))
 
-// The sections available so far; the others show disabled until their phase lands.
-const AVAILABLE: DatabaseSection[] = ['design', 'history']
 const sections = computed(() =>
   (
     [
@@ -46,7 +44,6 @@ const sections = computed(() =>
     id,
     label: xs.value ? short : label,
     icon,
-    disabled: !AVAILABLE.includes(id),
     to:
       id === 'design'
         ? { name: 'design', params: { ...params.value, versionId: props.version.id } }
@@ -108,18 +105,18 @@ const back = () => {
       </v-list>
     </v-menu>
     <nav class="db-navigation" aria-label="データベースの画面">
-      <template v-for="item in sections" :key="item.id">
-        <button v-if="item.disabled" disabled>
+      <router-link
+        v-for="item in sections"
+        :key="item.id"
+        v-slot="{ navigate }"
+        :to="item.to"
+        custom
+      >
+        <button :class="{ active: section === item.id }" @click="navigate">
           <v-icon size="17">{{ item.icon }}</v-icon
           >{{ item.label }}
         </button>
-        <router-link v-else v-slot="{ navigate }" :to="item.to" custom>
-          <button :class="{ active: section === item.id }" @click="navigate">
-            <v-icon size="17">{{ item.icon }}</v-icon
-            >{{ item.label }}
-          </button>
-        </router-link>
-      </template>
+      </router-link>
     </nav>
     <div class="db-actions">
       <slot name="actions" />

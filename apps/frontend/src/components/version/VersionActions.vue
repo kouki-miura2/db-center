@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isAllowed, type Role } from 'utils'
+import { isAllowed, type Role, type Target } from 'utils'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
@@ -7,22 +7,25 @@ import { useDisplay } from 'vuetify'
 import type { DatabaseData } from '../../composables/useDatabaseQuery.ts'
 import { useOnline } from '../../composables/useOnline.ts'
 import { useNotificationStore } from '../../stores/notification.ts'
+import DefinitionExportDialog from './DefinitionExportDialog.vue'
 import FinalizeDialog from './FinalizeDialog.vue'
 import NewVersionDialog from './NewVersionDialog.vue'
 import ProvisionalDialog from './ProvisionalDialog.vue'
 import RevertDialog from './RevertDialog.vue'
 
-// The version actions of the database header (design `DbHeader`): 仮確定 (editing), 編集に戻す and
-// 確定 (provisional), 新しいバージョン (when every version is final). A button the role may not use
+// The version actions of the database header (design `DbHeader`): 定義書 (any version), 仮確定
+// (editing), 編集に戻す and 確定 (provisional), 新しいバージョン (when every version is final). A button the role may not use
 // is hidden ("総論 > 権限"). On a phone they're items of the header's menu, with the `menu` slot's.
 type Version = DatabaseData['versions'][number]
-type Action = 'provisional' | 'revert' | 'finalize' | 'create'
+type Action = 'definition' | 'provisional' | 'revert' | 'finalize' | 'create'
 const props = defineProps<{
   productId: string
   databaseId: string
   version: Version
   versions: Version[]
   role: Role
+  target: Target
+  databaseName: string
   /** The design screen has unsaved edits, which a provisional version wouldn't include. */
   dirty?: boolean
 }>()
@@ -36,6 +39,13 @@ const latestIsFinal = computed(() => props.versions.every((v) => v.status === 'f
 const actions = computed(() =>
   (
     [
+      {
+        id: 'definition',
+        label: '定義書',
+        icon: 'mdi-file-document-outline',
+        shown: isAllowed(props.role, 'exportDefinition'),
+        primary: false,
+      },
       {
         id: 'provisional',
         label: '仮確定',
@@ -136,6 +146,17 @@ const openObject = (objectKey: string) =>
       />
     </v-list>
   </v-menu>
+  <DefinitionExportDialog
+    v-if="dialog === 'definition'"
+    :model-value="true"
+    :product-id="productId"
+    :database-id="databaseId"
+    :database-name="databaseName"
+    :target="target"
+    :version="version"
+    :versions="versions"
+    @update:model-value="dialog = null"
+  />
   <ProvisionalDialog
     v-if="dialog === 'provisional'"
     :model-value="true"

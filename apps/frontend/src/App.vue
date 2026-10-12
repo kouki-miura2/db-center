@@ -14,7 +14,14 @@ import { useNotificationStore } from './stores/notification.ts'
 const route = useRoute()
 const { xs } = useDisplay()
 const isDesign = computed(() =>
-  ['database', 'design', 'design-object', 'database-history'].includes(String(route.name)),
+  [
+    'database',
+    'design',
+    'design-object',
+    'database-history',
+    'database-build',
+    'database-migration',
+  ].includes(String(route.name)),
 )
 const notification = useNotificationStore()
 const online = useOnline()

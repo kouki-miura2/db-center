@@ -382,13 +382,10 @@ const closeIdentity = () => {
             :version="dbVersion"
             :versions="data.versions"
             :role="product.data.value.data.role"
+            :target="target"
+            :database-name="data.database.name"
             :dirty="dirty"
           >
-            <template #before>
-              <v-btn variant="outlined" prepend-icon="mdi-file-document-outline" disabled>{{
-                mdAndUp ? '定義書PDF' : ''
-              }}</v-btn>
-            </template>
             <template #after>
               <v-btn
                 v-if="draft"
@@ -405,7 +402,6 @@ const closeIdentity = () => {
                 title="共通カラム"
                 @click="common = true"
               />
-              <v-list-item prepend-icon="mdi-file-document-outline" title="定義書PDF" disabled />
             </template>
           </VersionActions>
         </template>

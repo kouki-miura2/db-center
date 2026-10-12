@@ -93,6 +93,20 @@ export const routes: RouteRecordRaw[] = [
     meta: { crumb: 'データベース設計' },
   },
   {
+    path: '/products/:productId/databases/:databaseId/build',
+    name: 'database-build',
+    component: () => import('../views/BuildView.vue'),
+    props: true,
+    meta: { crumb: 'ビルド' },
+  },
+  {
+    path: '/products/:productId/databases/:databaseId/migration',
+    name: 'database-migration',
+    component: () => import('../views/MigrationView.vue'),
+    props: true,
+    meta: { crumb: 'マイグレーション' },
+  },
+  {
     path: '/products/:productId/databases/:databaseId/history',
     name: 'database-history',
     component: () => import('../views/VersionHistoryView.vue'),

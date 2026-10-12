@@ -21,6 +21,8 @@
     "@tanstack/vue-query": "catalog:",
     "hono": "^4.13.7",
     "idb-keyval": "catalog:",
+    "jspdf": "catalog:",
+    "jspdf-autotable": "catalog:",
     "pinia": "^4.0.3",
     "sortablejs": "catalog:",
     "utils": "workspace:*",

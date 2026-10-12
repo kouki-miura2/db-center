@@ -21,6 +21,8 @@ test.each([
   ['/products/p1/databases/db1', 'database'],
   ['/products/p1/databases/db1/versions/v1', 'design'],
   ['/products/p1/databases/db1/history', 'database-history'],
+  ['/products/p1/databases/db1/build', 'database-build'],
+  ['/products/p1/databases/db1/migration?from=v1&to=v2', 'database-migration'],
   ['/products/p1/databases/db1/versions/v1/objects/o1?tab=indexes', 'design-object'],
 ])('resolves %s to %s', (path, name) => {
   expect(resolve(path).name).toBe(name)
