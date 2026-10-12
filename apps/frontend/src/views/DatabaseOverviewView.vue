@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { TARGETS, LIMITS, isAllowed, utf8ByteLength } from 'utils'
+import { LIMITS, isAllowed, utf8ByteLength } from 'utils'
 import { computed, ref, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
@@ -8,13 +8,14 @@ import { ApiError } from '../api/call.ts'
 import DeleteDialog from '../components/common/DeleteDialog.vue'
 import OperationError from '../components/common/OperationError.vue'
 import CommonColumnsDialog from '../components/database/CommonColumnsDialog.vue'
-import VersionChip from '../components/database/VersionChip.vue'
+import DbHeader from '../components/database/DbHeader.vue'
 import DesignField from '../components/design/DesignField.vue'
 import ObjectNames from '../components/design/ObjectNames.vue'
 import SchemaEditor from '../components/design/SchemaEditor.vue'
 import SchemaTree from '../components/design/SchemaTree.vue'
 import SequenceEditor from '../components/design/SequenceEditor.vue'
 import TableEditor from '../components/design/TableEditor.vue'
+import VersionActions from '../components/version/VersionActions.vue'
 import { useDatabaseQuery } from '../composables/useDatabaseQuery.ts'
 import { useObjectMutations, type ObjectInput } from '../composables/useObjectMutations.ts'
 import { useOnline } from '../composables/useOnline.ts'
@@ -53,6 +54,8 @@ const source = useVersionQuery(() => query.data.value?.data.version.sourceVersio
 const mutations = useObjectMutations(props.productId, props.databaseId)
 const data = computed(() => database.data.value?.data)
 const version = computed(() => query.data.value?.data.version)
+// The version as the database scope lists it (with its revision), for the header and its actions.
+const dbVersion = computed(() => data.value?.versions.find((v) => v.id === version.value?.id))
 const target = computed(() => product.data.value?.data.product.target ?? 'postgresql18')
 const objects = computed(() => (query.data.value?.data.objects ?? []) as DesignObject[])
 const changes = computed(() => objectChanges(objects.value, source.data.value?.data.objects ?? []))
@@ -347,12 +350,6 @@ const createDdl = async () => {
     /* Show API validation beside the preview. */
   }
 }
-const changeVersion = (id: string) => {
-  void router.push({
-    name: 'design',
-    params: { productId: props.productId, databaseId: props.databaseId, versionId: id },
-  })
-}
 const closeIdentity = () => {
   adding.value = false
   identity.value = false
@@ -365,94 +362,54 @@ const closeIdentity = () => {
       @reload="reload"
     /><v-progress-linear v-if="query.isPending.value || database.isPending.value" indeterminate />
     <template v-if="data && version && product.data.value && query.data.value">
-      <header class="db-header">
-        <v-btn
-          icon="mdi-arrow-left"
-          variant="text"
-          size="small"
-          :aria-label="xs && objectKey ? 'オブジェクト一覧に戻る' : 'データベース一覧に戻る'"
-          @click="back"
-        />
-        <div class="db-title">
-          <small v-if="!xs"
-            >{{ product.data.value.data.product.name }} · {{ TARGETS[target].label }}</small
-          ><strong class="font-mono">{{ data.database.name }}</strong
-          ><v-menu v-if="xs"
-            ><template #activator="{ props: menu }"
-              ><button v-bind="menu" class="mobile-version">
-                <VersionChip :version="version" /><v-icon size="14">mdi-chevron-down</v-icon>
-              </button></template
-            ><v-list
-              ><v-list-item
-                v-for="v in data.versions"
-                :key="v.id"
-                :title="
-                  'v' +
-                  v.number +
-                  ' · ' +
-                  (v.status === 'editing'
-                    ? '編集中'
-                    : v.status === 'provisional'
-                      ? '仮確定'
-                      : '確定')
-                "
-                @click="changeVersion(v.id)" /></v-list
-          ></v-menu>
-        </div>
-        <v-menu v-if="!xs"
-          ><template #activator="{ props: menu }"
-            ><v-btn
-              v-bind="menu"
-              variant="outlined"
-              append-icon="mdi-chevron-down"
-              class="version-select"
-              ><VersionChip :version="version" /></v-btn></template
-          ><v-list
-            ><v-list-item
-              v-for="v in data.versions"
-              :key="v.id"
-              :title="
-                'v' +
-                v.number +
-                ' · ' +
-                (v.status === 'editing' ? '編集中' : v.status === 'provisional' ? '仮確定' : '確定')
-              "
-              @click="changeVersion(v.id)" /></v-list
-        ></v-menu>
-        <nav class="db-navigation">
-          <button class="active"><v-icon size="17">mdi-pencil-ruler</v-icon>設計</button
-          ><button disabled><v-icon size="17">mdi-hammer-wrench</v-icon>ビルド</button
-          ><button disabled><v-icon size="17">mdi-swap-horizontal</v-icon>マイグレーション</button
-          ><button disabled>
-            <v-icon size="17">mdi-history</v-icon>{{ xs ? '履歴' : 'バージョン履歴' }}
-          </button>
-        </nav>
-        <div class="db-actions">
-          <v-btn v-if="!xs" variant="outlined" prepend-icon="mdi-file-document-outline" disabled>{{
-            mdAndUp ? '定義書PDF' : ''
-          }}</v-btn
-          ><v-btn
-            v-if="!xs && draft"
-            color="primary"
-            :loading="mutations.save.isPending.value"
-            :disabled="!canEdit || !dirty"
-            @click="save"
-            >保存</v-btn
-          ><v-menu v-if="xs"
-            ><template #activator="{ props: menu }"
-              ><v-btn
-                v-bind="menu"
-                icon="mdi-dots-vertical"
-                variant="text"
-                size="small"
-                aria-label="データベースの操作" /></template
-            ><v-list
-              ><v-list-item title="共通カラム" @click="common = true" /><v-list-item
-                title="定義書PDF"
-                disabled /><v-list-item title="仮確定" disabled /></v-list
-          ></v-menu>
-        </div>
-      </header>
+      <DbHeader
+        v-if="dbVersion"
+        :product-id="productId"
+        :database-id="databaseId"
+        section="design"
+        :product-name="product.data.value.data.product.name"
+        :target="target"
+        :database-name="data.database.name"
+        :version="dbVersion"
+        :versions="data.versions"
+        :back-label="xs && objectKey ? 'オブジェクト一覧に戻る' : undefined"
+        @back="back"
+      >
+        <template #actions>
+          <VersionActions
+            :product-id="productId"
+            :database-id="databaseId"
+            :version="dbVersion"
+            :versions="data.versions"
+            :role="product.data.value.data.role"
+            :dirty="dirty"
+          >
+            <template #before>
+              <v-btn variant="outlined" prepend-icon="mdi-file-document-outline" disabled>{{
+                mdAndUp ? '定義書PDF' : ''
+              }}</v-btn>
+            </template>
+            <template #after>
+              <v-btn
+                v-if="draft"
+                color="primary"
+                :loading="mutations.save.isPending.value"
+                :disabled="!canEdit || !dirty"
+                @click="save"
+                >保存</v-btn
+              >
+            </template>
+            <template #menu>
+              <v-list-item
+                prepend-icon="mdi-table-column-plus-after"
+                title="共通カラム"
+                @click="common = true"
+              />
+              <v-list-item prepend-icon="mdi-file-document-outline" title="定義書PDF" disabled />
+            </template>
+          </VersionActions>
+        </template>
+      </DbHeader>
       <p v-if="version.status !== 'editing'" class="readonly-note">
         {{ version.status === 'provisional' ? '仮確定' : '確定' }}バージョンは読み取り専用です。
       </p>

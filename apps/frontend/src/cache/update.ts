@@ -45,3 +45,13 @@ export const removeProductCache = (client: QueryClient, id: string) => {
   client.removeQueries({ queryKey: scopeKeys.product(id) })
   client.removeQueries({ queryKey: ['audit', id] })
 }
+
+/**
+ * The revision to store after a write that returned `returned`: that one only if no other write
+ * came in between (cached + 1). Otherwise the cached one stays, so the next check fetches what
+ * this response doesn't contain.
+ */
+export const revisionAfterWrite = (client: QueryClient, key: QueryKey, returned: number) => {
+  const cached = client.getQueryData<{ revision: number }>(key)?.revision ?? 0
+  return returned === cached + 1 ? returned : cached
+}

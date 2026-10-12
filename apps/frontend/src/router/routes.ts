@@ -93,6 +93,13 @@ export const routes: RouteRecordRaw[] = [
     meta: { crumb: 'データベース設計' },
   },
   {
+    path: '/products/:productId/databases/:databaseId/history',
+    name: 'database-history',
+    component: () => import('../views/VersionHistoryView.vue'),
+    props: true,
+    meta: { crumb: 'バージョン履歴' },
+  },
+  {
     path: '/products/:productId/databases/:databaseId/versions/:versionId',
     name: 'design',
     component: () => import('../views/DatabaseOverviewView.vue'),
