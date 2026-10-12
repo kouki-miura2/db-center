@@ -103,7 +103,7 @@ const submit = async () => {
               :prepend-icon="state(connection.status).icon"
               :base-color="state(connection.status).color"
             >
-              <v-list-item-title class="text-body-2 text-high-emphasis">
+              <v-list-item-title class="text-body-medium text-high-emphasis">
                 {{ connection.name }}
               </v-list-item-title>
               <v-list-item-subtitle>

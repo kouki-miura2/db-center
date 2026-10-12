@@ -53,7 +53,7 @@ export const renderGoogleButton = async (
     type: 'standard',
     theme: 'outline',
     size: 'large',
-    shape: 'pill',
+    shape: 'rectangular',
     text: 'signin_with',
     locale: 'ja',
     width: Math.min(parent.clientWidth || 380, 400),

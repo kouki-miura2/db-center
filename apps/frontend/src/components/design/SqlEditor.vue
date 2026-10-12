@@ -38,7 +38,7 @@ onMounted(() => {
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px' },
-          '.cm-scroller': { fontFamily: 'ui-monospace, monospace', overflow: 'auto' },
+          '.cm-scroller': { fontFamily: "'Noto Sans JP', sans-serif", overflow: 'auto' },
           '.cm-content': { padding: '16px 0' },
           '.cm-gutters': { backgroundColor: '#fafbfc', border: 'none', color: '#a1aaba' },
         }),

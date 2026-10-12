@@ -25,12 +25,12 @@ const back = () => {
       class="mb-4 ml-n3"
       @click="back"
     />
-    <h1 class="text-h5 font-weight-bold mb-1">{{ document.title }}</h1>
-    <div class="text-caption text-medium-emphasis mb-6">{{ LEGAL_VERSION }} 版</div>
-    <p class="text-body-2 mb-6">{{ document.intro }}</p>
+    <h1 class="text-headline-small font-weight-bold mb-1">{{ document.title }}</h1>
+    <div class="text-body-small text-medium-emphasis mb-6">{{ LEGAL_VERSION }} 版</div>
+    <p class="text-body-medium mb-6">{{ document.intro }}</p>
     <section v-for="section in document.sections" :key="section.heading" class="mb-6">
-      <h2 class="text-subtitle-1 font-weight-bold mb-2">{{ section.heading }}</h2>
-      <p v-for="(paragraph, i) in section.paragraphs" :key="i" class="text-body-2 mb-2">
+      <h2 class="text-title-medium font-weight-bold mb-2">{{ section.heading }}</h2>
+      <p v-for="(paragraph, i) in section.paragraphs" :key="i" class="text-body-medium mb-2">
         {{ paragraph }}
       </p>
     </section>

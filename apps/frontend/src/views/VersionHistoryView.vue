@@ -7,6 +7,7 @@ import { useDisplay } from 'vuetify'
 import DatabasePage from '../components/database/DatabasePage.vue'
 import VersionChip from '../components/database/VersionChip.vue'
 import DeploymentProgress from '../components/deployment/DeploymentProgress.vue'
+import DefinitionExportDialog from '../components/version/DefinitionExportDialog.vue'
 import NewVersionDialog from '../components/version/NewVersionDialog.vue'
 import type { DatabaseData } from '../composables/useDatabaseQuery.ts'
 import { useOnline } from '../composables/useOnline.ts'
@@ -19,6 +20,7 @@ const router = useRouter()
 const { xs } = useDisplay()
 const online = useOnline()
 const creating = ref(false)
+const exporting = ref<DatabaseData['versions'][number]>()
 const shownDeployment = ref<string>()
 const STATUS = { running: '実行中', succeeded: '成功', failed: '失敗' } as const
 const STATUS_COLORS = { running: 'info', succeeded: 'success', failed: 'error' } as const
@@ -84,10 +86,30 @@ const openDiff = (database: DatabaseData, versionId: string) => {
           <v-spacer />
           <v-icon size="18" color="medium-emphasis">mdi-chevron-right</v-icon>
         </div>
-        <p v-if="v.memo" class="text-body-2 mb-1">{{ v.memo }}</p>
+        <p v-if="v.memo" class="text-body-medium mb-1">{{ v.memo }}</p>
         <p class="screen-caption font-mono">
           確定 {{ dateTime(v.finalizedAt) }} ・ {{ appliedTo(database, v.id) }}
         </p>
+        <div class="d-flex flex-wrap ga-2 mt-3">
+          <v-btn
+            v-if="v.status !== 'editing' && v.sourceVersionId"
+            variant="outlined"
+            size="small"
+            prepend-icon="mdi-vector-difference"
+            :aria-label="`v${v.number} の差分`"
+            @click.stop="openDiff(database, v.id)"
+            >差分</v-btn
+          >
+          <v-btn
+            variant="outlined"
+            size="small"
+            prepend-icon="mdi-file-document-outline"
+            :aria-label="`v${v.number} の定義書を出力`"
+            :disabled="!online"
+            @click.stop="exporting = v"
+            >定義書</v-btn
+          >
+        </div>
       </v-card>
     </div>
     <v-card v-else>
@@ -113,10 +135,10 @@ const openDiff = (database: DatabaseData, versionId: string) => {
                   : '—'
               }}
             </td>
-            <td class="text-body-2">{{ v.memo ?? '' }}</td>
-            <td class="font-mono text-caption">{{ dateTime(v.provisionalAt) }}</td>
-            <td class="font-mono text-caption">{{ dateTime(v.finalizedAt) }}</td>
-            <td class="text-caption">{{ appliedTo(database, v.id) }}</td>
+            <td class="text-body-medium">{{ v.memo ?? '' }}</td>
+            <td class="font-mono text-body-small">{{ dateTime(v.provisionalAt) }}</td>
+            <td class="font-mono text-body-small">{{ dateTime(v.finalizedAt) }}</td>
+            <td class="text-body-small">{{ appliedTo(database, v.id) }}</td>
             <td class="text-no-wrap">
               <v-btn
                 v-if="v.status !== 'editing' && v.sourceVersionId"
@@ -125,6 +147,15 @@ const openDiff = (database: DatabaseData, versionId: string) => {
                 size="small"
                 :aria-label="`v${v.number} の差分`"
                 @click.stop="openDiff(database, v.id)"
+              />
+              <v-btn
+                icon="mdi-file-document-outline"
+                variant="text"
+                size="small"
+                :aria-label="`v${v.number} の定義書を出力`"
+                :title="`v${v.number} の定義書を出力`"
+                :disabled="!online"
+                @click.stop="exporting = v"
               />
               <v-btn
                 icon="mdi-pencil-ruler"
@@ -162,8 +193,8 @@ const openDiff = (database: DatabaseData, versionId: string) => {
                 <v-chip :color="STATUS_COLORS[d.status]">{{ STATUS[d.status] }}</v-chip>
               </td>
               <td v-if="!xs">{{ d.executedByName }}</td>
-              <td class="font-mono text-caption">{{ dateTime(d.startedAt) }}</td>
-              <td v-if="!xs" class="font-mono text-caption">{{ dateTime(d.finishedAt) }}</td>
+              <td class="font-mono text-body-small">{{ dateTime(d.startedAt) }}</td>
+              <td v-if="!xs" class="font-mono text-body-small">{{ dateTime(d.finishedAt) }}</td>
             </tr>
           </tbody>
         </v-table>
@@ -189,6 +220,17 @@ const openDiff = (database: DatabaseData, versionId: string) => {
       :database-id="databaseId"
       :versions="database.versions"
       @done="openDesign"
+    />
+    <DefinitionExportDialog
+      v-if="exporting"
+      :model-value="true"
+      :product-id="productId"
+      :database-id="databaseId"
+      :database-name="database.database.name"
+      :target="product.product.target"
+      :version="exporting"
+      :versions="database.versions"
+      @update:model-value="exporting = undefined"
     />
   </DatabasePage>
 </template>

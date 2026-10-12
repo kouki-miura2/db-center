@@ -91,9 +91,9 @@
   text-decoration: none;
 }
 
-/* Physical names, types, SQL and dates (no web font: the OS's monospace). */
+/* Use the same Japanese font for UI text, physical names, types, SQL and dates. */
 .font-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: 'Noto Sans JP', sans-serif;
 }
 
 /* The "db" mark of the app bar and the sign-in screen. */
@@ -106,11 +106,8 @@
   display: grid;
   place-items: center;
   font:
-    600 12px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
+    600 12px 'Noto Sans JP',
+    sans-serif;
   flex: none;
 }
 
@@ -179,7 +176,7 @@
 }
 .app-brand {
   color: #16191f;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 15px;
 }
 .app-crumbs {
@@ -195,7 +192,7 @@
 .screen-title {
   font-size: 22px;
   line-height: 1.4;
-  font-weight: 700;
+  font-weight: 600;
 }
 .screen-caption,
 .field-hint {
@@ -492,8 +489,8 @@
 }
 .join-card .v-otp-input__field {
   font:
-    600 24px ui-monospace,
-    monospace;
+    600 24px 'Noto Sans JP',
+    sans-serif;
   text-transform: uppercase;
 }
 .join-card .v-otp-input .v-field {
@@ -512,8 +509,8 @@
 }
 .join-card .v-otp-field__content {
   font:
-    600 24px ui-monospace,
-    monospace;
+    600 24px 'Noto Sans JP',
+    sans-serif;
   text-transform: uppercase;
 }
 .join-card .v-btn {
@@ -1076,11 +1073,11 @@
   margin-bottom: 16px;
 }
 .common-columns-dialog .v-list-item-title {
-  font-family: ui-monospace, monospace;
+  font-family: 'Noto Sans JP', sans-serif;
   font-size: 13px;
 }
 .common-columns-dialog .v-list-item-subtitle {
-  font-family: ui-monospace, monospace;
+  font-family: 'Noto Sans JP', sans-serif;
   font-size: 11px;
 }
 @media (min-width: 600px) and (max-width: 959.98px) {
@@ -1218,7 +1215,7 @@
   margin-top: 18px;
 }
 .design-dialog .form-field .v-combobox {
-  font-family: ui-monospace, monospace;
+  font-family: 'Noto Sans JP', sans-serif;
 }
 .database-form-dialog .dialog-heading h2 {
   font-size: 18px;
@@ -1486,7 +1483,7 @@
 }
 .object-header h1 {
   font-size: 17px !important;
-  font-weight: 650;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 .object-logical {
@@ -1608,7 +1605,7 @@
   background: #edf0f5;
   padding: 3px 5px;
   border-radius: 3px;
-  font-family: ui-monospace, monospace;
+  font-family: 'Noto Sans JP', sans-serif;
   font-size: 10px;
   white-space: nowrap;
 }
@@ -1815,8 +1812,8 @@
   background: #16191f;
   color: #b8c9ff;
   font:
-    12px/1.75 ui-monospace,
-    monospace;
+    12px/1.75 'Noto Sans JP',
+    sans-serif;
   padding: 14px;
   border-radius: 8px;
   white-space: pre-wrap;

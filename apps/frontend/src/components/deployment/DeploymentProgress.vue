@@ -80,22 +80,24 @@ const downloadSql = async () => {
           {{ formatDate(new Date(row.startedAt), 'yyyy/MM/dd HH:mm') }}
         </span>
         <v-spacer />
-        <span v-if="total" class="font-mono text-body-2">{{ seconds(total) }}</span>
+        <span v-if="total" class="font-mono text-body-medium">{{ seconds(total) }}</span>
       </div>
       <v-list density="compact">
         <v-list-item v-for="(step, i) in logRows(row.log)" :key="i" prepend-icon="mdi-check">
           <div class="d-flex ga-3">
-            <span class="text-body-2">{{ step.label }}</span>
-            <span class="font-mono text-body-2 text-medium-emphasis">{{ step.statements }}</span>
+            <span class="text-body-medium">{{ step.label }}</span>
+            <span class="font-mono text-body-medium text-medium-emphasis">{{
+              step.statements
+            }}</span>
             <v-spacer />
-            <span class="font-mono text-caption">{{ seconds(step.durationMs) }}</span>
+            <span class="font-mono text-body-small">{{ seconds(step.durationMs) }}</span>
           </div>
         </v-list-item>
         <v-list-item v-if="row.status === 'running'">
           <template #prepend>
             <v-progress-circular indeterminate size="16" width="2" class="mr-8" />
           </template>
-          <span class="text-body-2">{{ currentStep(row.log) ?? '準備中' }}</span>
+          <span class="text-body-medium">{{ currentStep(row.log) ?? '準備中' }}</span>
         </v-list-item>
       </v-list>
       <div class="px-4 pb-4">

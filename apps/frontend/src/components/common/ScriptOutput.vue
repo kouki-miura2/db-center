@@ -33,7 +33,7 @@ const download = () => downloadFile(props.fileName, props.sql, 'application/sql;
   <v-card class="script-output">
     <div class="d-flex align-center flex-wrap ga-2 px-4 py-3 border-b">
       <v-icon icon="mdi-file-code-outline" size="18" color="medium-emphasis" />
-      <span class="font-mono text-body-2 text-truncate">{{ fileName }}</span>
+      <span class="font-mono text-body-medium text-truncate">{{ fileName }}</span>
       <span class="screen-caption font-mono">{{ lines.length.toLocaleString() }} 行</span>
       <v-chip>{{ targetLabel }}</v-chip>
       <v-spacer />

@@ -18,7 +18,7 @@ The backend also needs the client ID, as a secret; list both places in `README.m
 
 - The official Google button (Google Identity Services) can't be disabled, so it can't wait for a consent checkbox: consent comes after the sign-in (see below).
 - The API verifies the ID token, with the client ID as its `aud`.
-- Only when `VITE_GOOGLE_WEB_CLIENT_ID` is unset, show a disabled `v-btn` that looks like the official button in its place: `size: large`, `shape: pill`, 40px high, at most 400px wide. A development login may stand in for Google (see "Auth" in the root `AGENTS.md`).
+- Use the official button's rectangular shape to match `docs/design`. Only when `VITE_GOOGLE_WEB_CLIENT_ID` is unset, show a disabled, outlined `v-btn` in its place: 4px corner radius, 46px high on PC and 50px on tablet/phone, at most 400px wide. A development login may stand in for Google (see "Auth" in the root `AGENTS.md`); open its form in a dialog so it does not displace the normal login screen.
 
 ## Terms of service and privacy policy
 

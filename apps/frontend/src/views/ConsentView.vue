@@ -28,8 +28,10 @@ const leave = async () => {
 <template>
   <v-container class="page d-flex justify-center">
     <v-card max-width="480" class="pa-6 w-100">
-      <h1 class="text-h6 font-weight-bold mb-2">利用規約・プライバシーポリシーが改定されました</h1>
-      <p class="text-body-2 text-medium-emphasis mb-4">
+      <h1 class="text-title-large font-weight-bold mb-2">
+        利用規約・プライバシーポリシーが改定されました
+      </h1>
+      <p class="text-body-medium text-medium-emphasis mb-4">
         {{ message }}
       </p>
       <ConsentCheckbox v-model="agreed" class="mb-4" />

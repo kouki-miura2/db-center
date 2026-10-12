@@ -79,7 +79,7 @@ const copy = async () => {
 <template>
   <v-card :class="['participants-card', { 'members-detailed': detailed && !xs }]">
     <div class="member-title d-flex align-center ga-2">
-      <h2 class="text-body-2 font-weight-bold">参加者</h2>
+      <h2 class="text-body-medium font-weight-bold">参加者</h2>
       <span v-if="!detailed" class="font-mono screen-caption"
         >{{ data.members.length + data.invitations.length }} / {{ LIMITS.membersPerProduct }}</span
       >
@@ -179,7 +179,7 @@ const copy = async () => {
         <v-avatar v-if="!detailed || xs" size="28" color="grey-lighten-4"
           ><v-icon size="16">mdi-email-outline</v-icon></v-avatar
         >
-        <span class="member-name font-mono text-caption text-break">{{ invitation.email }}</span>
+        <span class="member-name font-mono text-body-small text-break">{{ invitation.email }}</span>
         <span v-if="detailed && !xs" class="screen-caption"
           >期限 {{ formatDate(new Date(invitation.expiresAt), 'yyyy/MM/dd HH:mm') }}</span
         >
@@ -244,10 +244,10 @@ const copy = async () => {
     ><v-card
       ><v-card-title>招待コード</v-card-title
       ><v-card-text
-        ><div class="font-mono text-h4 text-center my-4 text-primary text-selectable">
+        ><div class="font-mono text-display-small text-center my-4 text-primary text-selectable">
           {{ code?.passcode }}
         </div>
-        <p class="text-body-2">
+        <p class="text-body-medium">
           有効期限 {{ code && formatDate(new Date(code.expiresAt), 'yyyy/MM/dd HH:mm') }}
         </p></v-card-text
       ><v-card-actions

@@ -11,7 +11,7 @@ declare module 'vue-router' {
   }
 }
 
-// The screens of `docs/frontend-implementation.md` "3. ルーティング", added phase by phase.
+// The app's screens; features and permissions are defined in docs/spec.md.
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: { name: 'products' } },
   {

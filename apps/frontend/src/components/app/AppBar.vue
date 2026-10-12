@@ -43,7 +43,7 @@ const leave = async () => {
           aria-label="前の画面に戻る"
         />
         <div v-else class="app-logo">db</div>
-        <span class="text-subtitle-2 font-weight-bold text-truncate flex-grow-1">
+        <span class="text-title-small font-weight-bold text-truncate flex-grow-1">
           {{ props.mobileTitle ?? props.crumb ?? 'db-center' }}
         </span>
       </template>
@@ -84,11 +84,11 @@ const leave = async () => {
             <v-avatar
               size="30"
               color="primary-soft"
-              class="text-primary-darken-1 font-weight-bold text-caption"
+              class="text-primary-darken-1 font-weight-bold text-body-small"
             >
               {{ initial }}
             </v-avatar>
-            <span v-if="!xs" class="ml-2 text-body-2">{{ auth.user.name }}</span>
+            <span v-if="!xs" class="ml-2 text-body-medium">{{ auth.user.name }}</span>
           </v-btn>
         </template>
         <v-list density="compact" min-width="240">

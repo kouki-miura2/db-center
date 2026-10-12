@@ -145,7 +145,7 @@ const close = (value: boolean) => {
           <td v-if="!sm" class="font-mono">
             {{ database.latestFinalVersion ? 'v' + database.latestFinalVersion.number : '—' }}
           </td>
-          <td class="font-mono text-caption">
+          <td class="font-mono text-body-small">
             {{ formatDate(new Date(database.updatedAt), 'yyyy/MM/dd HH:mm') }}
           </td>
           <td>

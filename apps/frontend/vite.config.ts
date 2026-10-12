@@ -18,8 +18,11 @@ export default defineConfig({
     // (`registerType: 'prompt'`, `usePwaUpdate`). `/api` is never cached. Off in `vp dev`.
     VitePWA({
       registerType: 'prompt',
+      includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
+        // Keep enough headroom for self-hosted Japanese fonts and generated chunks.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         // The PDF export's libraries (jsPDF and its optional canvg, html2canvas, DOMPurify) load
         // only when a PDF is made, which needs to be online anyway: don't make every device fetch
         // them up front. Its TTF fonts aren't matched by `globPatterns` either.
@@ -30,8 +33,28 @@ export default defineConfig({
         // The SPA fallback must not answer the API.
         navigateFallbackDenylist: [/^\/api\//],
       },
-      // PWA (home screen install) not needed: no manifest. Set one here to make it installable.
-      manifest: false,
+      manifest: {
+        id: '/',
+        name: 'db-center',
+        short_name: 'db-center',
+        description: 'データベースの設計・バージョン管理・ビルド・マイグレーション',
+        lang: 'ja',
+        start_url: '/products',
+        scope: '/',
+        display: 'standalone',
+        theme_color: '#2F55D4',
+        background_color: '#F4F5F7',
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          {
+            src: '/icons/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
     }),
   ],
   // Dev only. Vuetify's auto-imported components are added at transform time, so Vite's dependency

@@ -189,7 +189,7 @@ const types = computed(() =>
               }}{{ message.message }}</v-btn
             >
           </div>
-          <p class="text-body-2 text-medium-emphasis mb-4">
+          <p class="text-body-medium text-medium-emphasis mb-4">
             テーブルにまとめて追加するカラムを設定します。このセットを変更しても、追加済みのテーブルのカラムは変わりません。
           </p>
           <v-progress-linear v-if="query.isPending.value" indeterminate />

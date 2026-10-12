@@ -248,11 +248,18 @@ VITE_OPERATOR_NAME=<operator name>                # shown in the terms and priva
 VITE_CONTACT_EMAIL=<contact email>                # shown in the terms and privacy policy
 ```
 
-- Sign in locally without Google: the sign-in screen shows a development login under `vp dev`
+- Sign in locally without Google: open the development login dialog on the sign-in screen under `vp dev`
   only, and the API accepts it only with `DEV_LOGIN=true` in `apps/backend-worker/.dev.vars`.
+  Enter any syntactically valid email address; the normalized address identifies the development
+  user, so reuse it to sign in as the same user or use separate addresses to test multiple users.
 - The service worker (the update prompt, the app working offline) runs only in a production
   build: check it with `vp run frontend#build` and `vp run frontend#preview`, with the backend
   dev server up (the preview proxies `/api` too).
+- The production build includes the PWA manifest, regular and maskable app icons, and an Apple
+  touch icon. Serve it over HTTPS to install it through the browser. It opens `/products` in a
+  standalone window; signed-out users go to the login screen.
+- Screen and PDF fonts use Noto Sans JP. Its WOFF2 and TTF files are self-hosted in
+  `public/fonts/noto-sans-jp` with their license; the screen fonts are cached for offline use.
 
 - Run format/lint/type checks:
 

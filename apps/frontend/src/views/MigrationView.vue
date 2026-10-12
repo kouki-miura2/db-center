@@ -284,8 +284,8 @@ const expanded = ref(false)
                   <strong :class="['font-mono', signColors[change.action]]">{{
                     signs[change.action]
                   }}</strong>
-                  <span class="font-mono text-body-2">{{ label(change).name }}</span>
-                  <span class="text-body-2 text-medium-emphasis">{{
+                  <span class="font-mono text-body-medium">{{ label(change).name }}</span>
+                  <span class="text-body-medium text-medium-emphasis">{{
                     label(change).description
                   }}</span>
                   <v-spacer />

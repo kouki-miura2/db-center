@@ -62,6 +62,7 @@ watch(
       v.sourceVersionId ??
       props.versions.find((o) => o.status === 'final' && o.number < v.number)?.id ??
       null
+    form.revisions = compareId.value !== null
   },
   { immediate: true },
 )

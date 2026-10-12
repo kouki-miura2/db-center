@@ -10,10 +10,10 @@ const privacy = router.resolve({ name: 'privacy' }).href
 </script>
 
 <template>
-  <v-sheet border rounded="lg" class="px-2">
+  <v-sheet border rounded="lg" class="consent-box">
     <v-checkbox v-model="agreed" hide-details>
       <template #label>
-        <span class="text-body-2">
+        <span class="consent-label">
           <a :href="terms" target="_blank" rel="noopener" @click.stop>利用規約</a>
           と
           <a :href="privacy" target="_blank" rel="noopener" @click.stop>プライバシーポリシー</a>
@@ -23,3 +23,33 @@ const privacy = router.resolve({ name: 'privacy' }).href
     </v-checkbox>
   </v-sheet>
 </template>
+
+<style scoped>
+.consent-box {
+  padding: 10px 14px;
+  border-color: #e3e5ea;
+}
+.consent-label {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.consent-box :deep(.v-selection-control) {
+  min-height: 28px;
+  align-items: flex-start;
+}
+.consent-box :deep(.v-selection-control__wrapper) {
+  width: 20px;
+  height: 24px;
+  margin-right: 10px;
+}
+.consent-box :deep(.v-selection-control__input) {
+  width: 24px;
+  height: 24px;
+}
+.consent-box :deep(.v-icon) {
+  font-size: 22px;
+}
+.consent-box :deep(.v-label) {
+  opacity: 1;
+}
+</style>

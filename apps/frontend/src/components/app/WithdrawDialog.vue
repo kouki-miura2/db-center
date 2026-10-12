@@ -38,8 +38,8 @@ const submit = async () => {
 <template>
   <v-dialog v-model="open" max-width="480">
     <v-card class="pa-2">
-      <v-card-title class="text-h6 font-weight-bold">退会しますか？</v-card-title>
-      <v-card-text class="text-body-2">
+      <v-card-title class="text-title-large font-weight-bold">退会しますか？</v-card-title>
+      <v-card-text class="text-body-medium">
         <v-progress-linear v-if="products.isPending.value" indeterminate color="primary" />
         <template v-else-if="owned.length > 0">
           <v-alert type="warning" variant="tonal" density="compact" class="mb-3">

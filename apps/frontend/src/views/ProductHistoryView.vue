@@ -26,7 +26,7 @@ const more = (visible: boolean) => {
     ><div class="d-flex align-center mb-6 ga-3">
       <div>
         <h1 class="screen-title">操作履歴</h1>
-        <p class="text-body-2 text-medium-emphasis mt-2">
+        <p class="text-body-medium text-medium-emphasis mt-2">
           {{ product.data.value?.data.product.name }}
         </p>
       </div>

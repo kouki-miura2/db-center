@@ -263,7 +263,7 @@ const confirmDelete = async (confirmationName: string) => {
       border="error sm"
     >
       <div>
-        <h2 class="text-body-2 font-weight-bold text-error mb-1">プロダクトを削除</h2>
+        <h2 class="text-body-medium font-weight-bold text-error mb-1">プロダクトを削除</h2>
         <p class="screen-caption">
           データベースと設計を含む、プロダクト内のすべてのデータが削除されます。
         </p>

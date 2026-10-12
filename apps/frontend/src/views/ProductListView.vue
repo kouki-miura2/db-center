@@ -54,7 +54,7 @@ const full = computed(() => products.value.length >= LIMITS.productsPerUser)
     />
     <v-card v-else-if="products.length === 0" class="text-center pa-10">
       <v-icon size="48" color="primary" class="mb-4">mdi-cube-outline</v-icon>
-      <h2 class="text-subtitle-1 mb-2">参加中のプロダクトはありません</h2>
+      <h2 class="text-title-medium mb-2">参加中のプロダクトはありません</h2>
       <p class="screen-caption">プロダクトを追加するか、招待コードで参加してください。</p>
     </v-card>
     <div v-else-if="xs" class="d-flex flex-column ga-3">
@@ -64,10 +64,10 @@ const full = computed(() => products.value.length >= LIMITS.productsPerUser)
           class="product-card-link"
         >
           <div class="d-flex align-center ga-2 mb-2">
-            <h2 class="text-body-2 font-weight-bold text-break">{{ product.name }}</h2>
+            <h2 class="text-body-medium font-weight-bold text-break">{{ product.name }}</h2>
             <RoleChip :role="product.role" />
           </div>
-          <p class="font-mono text-caption mb-1">{{ TARGETS[product.target].label }}</p>
+          <p class="font-mono text-body-small mb-1">{{ TARGETS[product.target].label }}</p>
           <p class="font-mono screen-caption">
             登録 {{ date(product.createdAt) }} ・ 参加 {{ date(product.joinedAt) }}
           </p>
@@ -117,8 +117,8 @@ const full = computed(() => products.value.length >= LIMITS.productsPerUser)
             </td>
             <td v-if="!sm" class="font-mono">{{ TARGETS[product.target].label }}</td>
             <td><RoleChip :role="product.role" /></td>
-            <td class="font-mono text-caption">{{ date(product.createdAt) }}</td>
-            <td class="font-mono text-caption">{{ date(product.joinedAt) }}</td>
+            <td class="font-mono text-body-small">{{ date(product.createdAt) }}</td>
+            <td class="font-mono text-body-small">{{ date(product.joinedAt) }}</td>
             <td>
               <v-btn
                 v-if="isAllowed(product.role, 'renameProduct')"

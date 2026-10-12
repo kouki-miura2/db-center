@@ -201,10 +201,10 @@ const canShare = typeof navigator !== 'undefined' && !!navigator.share
         </v-card>
       </div>
       <v-card v-if="xs && code" class="mb-4"
-        ><h2 class="text-body-2 font-weight-bold pa-4">招待したユーザー</h2>
+        ><h2 class="text-body-medium font-weight-bold pa-4">招待したユーザー</h2>
         <v-divider />
         <div v-for="row in sent" :key="row.email" class="pa-4">
-          <p class="font-mono text-body-2 mb-2 text-break">{{ row.email }}</p>
+          <p class="font-mono text-body-medium mb-2 text-break">{{ row.email }}</p>
           <RoleChip :role="row.role" /><span class="member-status pending ml-2">● 仮登録</span>
         </div></v-card
       >

@@ -151,7 +151,7 @@ const checks = computed(() => {
           <v-radio v-for="c in connections" :key="c.id" :value="c.id">
             <template #label>
               <span class="d-flex flex-column">
-                <span class="text-body-2 text-high-emphasis">{{ c.name }}</span>
+                <span class="text-body-medium text-high-emphasis">{{ c.name }}</span>
                 <span class="screen-caption font-mono">{{ c.connectionString }}</span>
               </span>
             </template>
@@ -206,9 +206,9 @@ const checks = computed(() => {
             :base-color="row.ok ? 'success' : 'error'"
           >
             <div class="d-flex ga-3 text-high-emphasis">
-              <span class="text-body-2">{{ row.label }}</span>
+              <span class="text-body-medium">{{ row.label }}</span>
               <v-spacer />
-              <span class="font-mono text-caption">{{ row.value }}</span>
+              <span class="font-mono text-body-small">{{ row.value }}</span>
             </div>
           </v-list-item>
         </v-list>

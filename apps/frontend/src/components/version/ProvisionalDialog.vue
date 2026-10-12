@@ -123,7 +123,7 @@ const openObject = (objectKey: string | null) => {
                   size="18"
                 />
               </template>
-              <v-list-item-title class="text-body-2">
+              <v-list-item-title class="text-body-medium">
                 <span class="font-mono">{{ objectName(issue.objectKey) }}</span>
                 {{ issue.message }}
               </v-list-item-title>
